@@ -460,9 +460,11 @@ function LoginScreen({
 function TVTab({
   departments,
   config,
+  reports,
 }: {
   departments: Department[];
   config: AppConfig | null;
+  reports: Report[];
 }) {
   const [time, setTime] = useState(new Date());
   useEffect(() => {
@@ -470,10 +472,13 @@ function TVTab({
     return () => clearInterval(t);
   }, []);
 
-  const totalTraffic = departments.reduce(
-    (acc, d) => acc + Number(d.patientCount),
-    0,
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayStartMs = todayStart.getTime();
+  const todayReports = reports.filter(
+    (r) => Number(r.timestamp) / 1_000_000 >= todayStartMs,
   );
+  const todayTotal = todayReports.length;
 
   return (
     <div className="space-y-4 pb-28">
@@ -510,10 +515,10 @@ function TVTab({
         <Card className="p-5">
           <TrendingUp size={18} className="text-emerald-400 mb-3" />
           <div className="text-[10px] font-black text-white/30 uppercase mb-1">
-            Daily Traffic
+            Today's Submissions
           </div>
           <div className="text-4xl font-black text-white tracking-tighter">
-            {totalTraffic}
+            {todayTotal}
           </div>
         </Card>
         <Card className="p-5">
@@ -580,7 +585,11 @@ function TVTab({
             >
               <DeptIcon icon={d.icon} className={`${d.color} mx-auto mb-1`} />
               <div className="text-lg font-black text-white">
-                {String(d.patientCount)}
+                {
+                  todayReports.filter(
+                    (r) => String(r.departmentId) === String(d.id),
+                  ).length
+                }
               </div>
               <div className="text-[9px] text-white/30 font-bold uppercase truncate">
                 {d.departmentLabel}
@@ -882,7 +891,7 @@ function SubmitReportModal({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="bg-[#151515] border border-white/5 text-white max-w-sm mx-auto rounded-[28px]">
+      <DialogContent className="bg-[#151515] border border-white/5 text-white max-w-sm mx-auto rounded-[28px] overflow-y-auto max-h-[85dvh]">
         <DialogHeader>
           <DialogTitle className="text-white font-black uppercase tracking-tight">
             {template?.title || "Submit Report"}
@@ -1327,44 +1336,51 @@ function MyDeptTab({
           <ClipboardList size={16} className="text-emerald-400" /> Available
           Report Forms
         </h3>
-        {templates.length === 0 ? (
-          <Card className="p-8 text-center">
-            <div
-              data-ocid="mydept.empty_state"
-              className="text-white/20 text-xs font-bold uppercase"
-            >
-              No form templates available yet.
-            </div>
-          </Card>
-        ) : (
-          <div className="space-y-3">
-            {templates.map((tmpl) => (
-              <Card
-                key={String(tmpl.id)}
-                className="p-5 flex items-center justify-between"
+        {(() => {
+          const visibleTemplates = templates.filter(
+            (tmpl) => tmpl.departmentId === 0n || tmpl.departmentId === dept.id,
+          );
+          return visibleTemplates.length === 0 ? (
+            <Card className="p-8 text-center">
+              <div
+                data-ocid="mydept.empty_state"
+                className="text-white/20 text-xs font-bold uppercase"
               >
-                <div>
-                  <div className="text-base font-black text-white">
-                    {tmpl.title}
-                  </div>
-                  <div className="text-[10px] text-white/30 mt-1">
-                    {parseFields(tmpl.fields)
-                      .map((f) => f.name)
-                      .join(" • ")}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  data-ocid={`mydept.submit_button.${Number(tmpl.id)}`}
-                  onClick={() => setSubmitModal({ open: true, template: tmpl })}
-                  className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-400 text-black font-black text-xs px-4 py-2.5 rounded-xl uppercase tracking-widest transition-colors"
+                No form templates available yet.
+              </div>
+            </Card>
+          ) : (
+            <div className="space-y-3">
+              {visibleTemplates.map((tmpl) => (
+                <Card
+                  key={String(tmpl.id)}
+                  className="p-5 flex items-center justify-between"
                 >
-                  <Plus size={12} /> Submit
-                </button>
-              </Card>
-            ))}
-          </div>
-        )}
+                  <div>
+                    <div className="text-base font-black text-white">
+                      {tmpl.title}
+                    </div>
+                    <div className="text-[10px] text-white/30 mt-1">
+                      {parseFields(tmpl.fields)
+                        .map((f) => f.name)
+                        .join(" • ")}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    data-ocid={`mydept.submit_button.${Number(tmpl.id)}`}
+                    onClick={() =>
+                      setSubmitModal({ open: true, template: tmpl })
+                    }
+                    className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-400 text-black font-black text-xs px-4 py-2.5 rounded-xl uppercase tracking-widest transition-colors"
+                  >
+                    <Plus size={12} /> Submit
+                  </button>
+                </Card>
+              ))}
+            </div>
+          );
+        })()}
       </div>
 
       {submitModal && (
@@ -1616,6 +1632,7 @@ function ReportsTab({
 // FORMS Tab (Admin)
 // ─────────────────────────────────────────────
 interface DraftField {
+  id: string;
   name: string;
   fieldType: string;
   options: string; // comma-separated for dropdown
@@ -1625,10 +1642,12 @@ function FormsTab({
   templates,
   actor,
   onRefresh,
+  departments,
 }: {
   templates: FormTemplate[];
   actor: ReturnType<typeof useActor>["actor"];
   onRefresh: () => void;
+  departments: Department[];
 }) {
   const [editingTemplate, setEditingTemplate] = useState<FormTemplate | null>(
     null,
@@ -1638,19 +1657,23 @@ function FormsTab({
   const [draftFields, setDraftFields] = useState<DraftField[]>([]);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<bigint | null>(null);
+  const [selectedDeptId, setSelectedDeptId] = useState<bigint>(0n);
 
   const openNewForm = () => {
     setEditingTemplate(null);
     setFormTitle("");
     setDraftFields([]);
+    setSelectedDeptId(0n);
     setShowBuilder(true);
   };
 
   const openEditForm = (tmpl: FormTemplate) => {
     setEditingTemplate(tmpl);
     setFormTitle(tmpl.title);
+    setSelectedDeptId(tmpl.departmentId);
     setDraftFields(
-      parseFields(tmpl.fields).map((f) => ({
+      parseFields(tmpl.fields).map((f, i) => ({
+        id: `existing-${i}`,
         name: f.name,
         fieldType: f.fieldType,
         options: f.options.join(", "),
@@ -1669,7 +1692,7 @@ function FormsTab({
   const addField = () => {
     setDraftFields((prev) => [
       ...prev,
-      { name: "", fieldType: "text", options: "" },
+      { id: crypto.randomUUID(), name: "", fieldType: "text", options: "" },
     ]);
   };
 
@@ -1710,11 +1733,12 @@ function FormsTab({
           ...editingTemplate,
           title: formTitle.trim(),
           fields: serialized,
+          departmentId: selectedDeptId,
         });
         toast.success("Form template updated");
       } else {
         await (actor as any).createFormTemplate(
-          0n,
+          selectedDeptId,
           formTitle.trim(),
           serialized,
         );
@@ -1776,6 +1800,25 @@ function FormsTab({
               placeholder="e.g. Daily Patient Report"
             />
 
+            <div className="space-y-1.5">
+              <span className="text-[10px] font-black text-white/40 uppercase tracking-widest">
+                Assign to Department
+              </span>
+              <select
+                data-ocid="forms.select"
+                value={String(selectedDeptId)}
+                onChange={(e) => setSelectedDeptId(BigInt(e.target.value))}
+                className="w-full bg-black/40 rounded-xl px-3 py-2.5 text-sm text-white border border-white/5 outline-none focus:ring-1 ring-emerald-500"
+              >
+                <option value="0">All Departments (Global)</option>
+                {departments.map((d) => (
+                  <option key={String(d.id)} value={String(d.id)}>
+                    {d.departmentLabel}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-black text-white/40 uppercase tracking-widest">
@@ -1799,7 +1842,7 @@ function FormsTab({
 
               {draftFields.map((field, idx) => (
                 <div
-                  key={`field-${field.name || idx}`}
+                  key={field.id}
                   data-ocid={`forms.field.${idx + 1}`}
                   className="bg-black/30 rounded-2xl p-4 space-y-3"
                 >
@@ -1902,8 +1945,18 @@ function FormsTab({
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 min-w-0">
-                    <div className="text-base font-black text-white">
-                      {tmpl.title}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <div className="text-base font-black text-white">
+                        {tmpl.title}
+                      </div>
+                      <span
+                        className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-lg ${tmpl.departmentId === 0n ? "bg-blue-500/15 text-blue-400" : "bg-emerald-500/15 text-emerald-400"}`}
+                      >
+                        {tmpl.departmentId === 0n
+                          ? "Global"
+                          : (departments.find((d) => d.id === tmpl.departmentId)
+                              ?.departmentLabel ?? "Unknown Dept")}
+                      </span>
                     </div>
                     <div className="text-[10px] text-white/30 mt-1 font-bold uppercase tracking-widest">
                       {tmpl.fields.length} field
@@ -2570,6 +2623,7 @@ export default function App() {
   const [reports, setReports] = useState<Report[]>([]);
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [dataLoading, setDataLoading] = useState(false);
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [reportsLoading, setReportsLoading] = useState(false);
   const [bootstrapped, setBootstrapped] = useState(false);
 
@@ -2583,6 +2637,7 @@ export default function App() {
         actor.getAppConfig(),
       ]);
       setDepartments(depts);
+      setHasLoadedOnce(true);
       setTemplates(tmpls as any);
       setConfig(cfg);
     } catch {
@@ -2634,7 +2689,10 @@ export default function App() {
   // Load reports when tab changes
   useEffect(() => {
     if (!actor) return;
-    if (session.type === "admin" && adminTab === "REPORTS") {
+    if (
+      session.type === "admin" &&
+      (adminTab === "REPORTS" || adminTab === "TV")
+    ) {
       loadReports();
     } else if (session.type === "deptHead" && deptTab === "MY_REPORTS") {
       loadReports(session.head.departmentId);
@@ -2690,7 +2748,7 @@ export default function App() {
 
       {/* Main Content */}
       <div className="px-4 py-5 max-w-2xl mx-auto">
-        {dataLoading && !departments.length && (
+        {!hasLoadedOnce && dataLoading && (
           <div
             data-ocid="app.loading_state"
             className="flex justify-center py-20"
@@ -2708,12 +2766,16 @@ export default function App() {
           </div>
         )}
 
-        {(!dataLoading || departments.length > 0) && (
+        {(hasLoadedOnce || !dataLoading) && (
           <>
             {session.type === "admin" && (
               <>
                 {adminTab === "TV" && (
-                  <TVTab departments={departments} config={config} />
+                  <TVTab
+                    departments={departments}
+                    config={config}
+                    reports={reports}
+                  />
                 )}
                 {adminTab === "DEPT" && (
                   <DepartmentsTab
@@ -2735,6 +2797,7 @@ export default function App() {
                     templates={templates}
                     actor={actor}
                     onRefresh={loadData}
+                    departments={departments}
                   />
                 )}
                 {adminTab === "CONFIG" && (
@@ -2758,7 +2821,10 @@ export default function App() {
                     templates={templates}
                     actor={actor}
                     headName={session.head.name}
-                    onSuccess={loadData}
+                    onSuccess={() => {
+                      loadData();
+                      loadReports();
+                    }}
                   />
                 )}
                 {deptTab === "MY_REPORTS" && (
