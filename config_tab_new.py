@@ -1,0 +1,573 @@
+config_tab = '''
+// ─────────────────────────────────────────────
+// CONFIG Tab (Admin)
+// ─────────────────────────────────────────────
+function ConfigTab({
+  departments,
+  actor,
+  config,
+  onRefresh,
+}: {
+  departments: Department[];
+  actor: ReturnType<typeof useActor>["actor"];
+  config: AppConfig | null;
+  onRefresh: () => void;
+}) {
+  const [appCfg, setAppCfg] = useState<
+    Omit<AppConfig, "tvRefreshRate"> & { tvRefreshRate: number }
+  >({
+    hospitalName: config?.hospitalName || "THQ Hospital Sillanwali",
+    departmentName: config?.departmentName || "IT DEPARTMENT",
+    tvRefreshRate: config ? Number(config.tvRefreshRate) : 30,
+  });
+  const [savingCfg, setSavingCfg] = useState(false);
+
+  // Department Users state
+  const [deptHeads, setDeptHeads] = useState<DepartmentHead[]>([]);
+  const [loadingHeads, setLoadingHeads] = useState(false);
+  const [newHead, setNewHead] = useState({ name: "", pin: "", deptId: "" });
+  const [addingHead, setAddingHead] = useState(false);
+  const [savingHead, setSavingHead] = useState(false);
+  const [editHead, setEditHead] = useState<DepartmentHead | null>(null);
+  const [editHeadDeptId, setEditHeadDeptId] = useState("");
+  const [savingEditHead, setSavingEditHead] = useState(false);
+
+  const [editDept, setEditDept] = useState<Department | null>(null);
+  const [savingDept, setSavingDept] = useState(false);
+
+  useEffect(() => {
+    if (config)
+      setAppCfg({ ...config, tvRefreshRate: Number(config.tvRefreshRate) });
+  }, [config]);
+
+  useEffect(() => {
+    if (!actor) return;
+    setLoadingHeads(true);
+    actor
+      .getAllDepartmentHeads()
+      .then(setDeptHeads)
+      .catch(() => toast.error("Failed to load dept heads"))
+      .finally(() => setLoadingHeads(false));
+  }, [actor]);
+
+  const saveConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!actor) return;
+    setSavingCfg(true);
+    try {
+      await actor.setAppConfig({
+        ...appCfg,
+        tvRefreshRate: BigInt(appCfg.tvRefreshRate || 30),
+      });
+      toast.success("Configuration saved");
+      onRefresh();
+    } catch {
+      toast.error("Failed to save config");
+    } finally {
+      setSavingCfg(false);
+    }
+  };
+
+  const handleAddHead = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!actor || !newHead.name || !newHead.pin || !newHead.deptId) return;
+    setSavingHead(true);
+    try {
+      await actor.createDepartmentHead(
+        newHead.name,
+        newHead.pin,
+        BigInt(newHead.deptId),
+      );
+      const updatedHeads = await actor.getAllDepartmentHeads();
+      setDeptHeads(updatedHeads);
+      setNewHead({ name: "", pin: "", deptId: "" });
+      setAddingHead(false);
+      toast.success("Department user created");
+    } catch {
+      toast.error("Failed to create department user");
+    } finally {
+      setSavingHead(false);
+    }
+  };
+
+  const handleUpdateHead = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!actor || !editHead) return;
+    setSavingEditHead(true);
+    try {
+      await actor.updateDepartmentHead({
+        ...editHead,
+        departmentId: BigInt(editHeadDeptId || editHead.departmentId),
+      });
+      const updatedHeads = await actor.getAllDepartmentHeads();
+      setDeptHeads(updatedHeads);
+      setEditHead(null);
+      toast.success("Department user updated");
+    } catch {
+      toast.error("Failed to update department user");
+    } finally {
+      setSavingEditHead(false);
+    }
+  };
+
+  const handleDeleteHead = async (pin: string) => {
+    if (!actor) return;
+    try {
+      await actor.deleteDepartmentHead(pin);
+      setDeptHeads((prev) => prev.filter((h) => h.pin !== pin));
+      toast.success("Department user removed");
+    } catch {
+      toast.error("Failed to remove");
+    }
+  };
+
+  const handleUpdateDept = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!actor || !editDept) return;
+    setSavingDept(true);
+    try {
+      await actor.updateDepartment(editDept);
+      setEditDept(null);
+      toast.success("Department updated");
+      onRefresh();
+    } catch {
+      toast.error("Failed to update");
+    } finally {
+      setSavingDept(false);
+    }
+  };
+
+  return (
+    <div className="space-y-5 pb-28">
+      <h2 className="text-white font-black flex items-center gap-2 uppercase">
+        <Settings size={20} className="text-emerald-400" /> Global Configuration
+      </h2>
+
+      {/* ── Department Users (User Management) — FIRST & PROMINENT ── */}
+      <div className="border border-emerald-500/20 rounded-[28px] overflow-hidden">
+        <div className="bg-emerald-500/10 px-5 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-xl bg-emerald-500/20 flex items-center justify-center">
+              <Users size={16} className="text-emerald-400" />
+            </div>
+            <div>
+              <div className="text-sm font-black text-white uppercase tracking-tight">
+                Department Users
+              </div>
+              <div className="text-[10px] text-emerald-400/60 font-bold uppercase tracking-widest mt-0.5">
+                User Management
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            data-ocid="config.head.add_button"
+            onClick={() => {
+              setAddingHead(!addingHead);
+              setEditHead(null);
+            }}
+            className="flex items-center gap-1.5 text-[10px] font-black text-emerald-400 border border-emerald-500/30 px-3 py-2 rounded-xl hover:bg-emerald-500/10 transition-colors uppercase tracking-widest bg-black/20"
+          >
+            <UserPlus size={12} /> Add User
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4 bg-[#151515]">
+          <div className="bg-blue-500/10 border border-blue-500/20 rounded-2xl px-4 py-3">
+            <p className="text-[11px] text-blue-300/80 font-bold">
+              ⚠️ Create department users here first. Each user gets a PIN to log
+              in as a Department Head and access their assigned department.
+            </p>
+          </div>
+
+          {addingHead && (
+            <form
+              onSubmit={handleAddHead}
+              className="bg-black/30 border border-white/5 rounded-2xl p-4 space-y-3"
+            >
+              <SectionLabel>
+                <UserPlus size={10} /> New Department User
+              </SectionLabel>
+              <FieldInput
+                label="Full Name"
+                value={newHead.name}
+                onChange={(v) => setNewHead((p) => ({ ...p, name: v }))}
+                placeholder="e.g. Dr. Ahmed"
+              />
+              <FieldInput
+                label="PIN (4-6 digits)"
+                value={newHead.pin}
+                onChange={(v) => setNewHead((p) => ({ ...p, pin: v }))}
+                type="password"
+                maxLength={6}
+                placeholder="Create PIN"
+              />
+              <div className="space-y-1.5">
+                <span className="text-[10px] font-black text-white/40 uppercase tracking-widest">
+                  Assign Department
+                </span>
+                <select
+                  value={newHead.deptId}
+                  onChange={(e) =>
+                    setNewHead((p) => ({ ...p, deptId: e.target.value }))
+                  }
+                  data-ocid="config.head.dept_select"
+                  className="w-full bg-black/40 rounded-xl px-3 py-2.5 text-sm text-white border border-white/5 outline-none focus:ring-1 ring-emerald-500"
+                >
+                  <option value="">-- Select Department --</option>
+                  {departments.map((d) => (
+                    <option key={String(d.id)} value={String(d.id)}>
+                      {d.departmentLabel}
+                    </option>
+                  ))}
+                </select>
+                {departments.length === 0 && (
+                  <p className="text-[10px] text-amber-400/80 font-bold">
+                    No departments yet — add departments in the DEPT tab first.
+                  </p>
+                )}
+              </div>
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  data-ocid="config.head.cancel_button"
+                  onClick={() => setAddingHead(false)}
+                  className="flex-1 py-2.5 rounded-xl bg-white/5 text-white/60 text-xs font-bold uppercase"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={
+                    savingHead ||
+                    !newHead.name ||
+                    !newHead.pin ||
+                    !newHead.deptId
+                  }
+                  data-ocid="config.head.save_button"
+                  className="flex-1 py-2.5 rounded-xl bg-emerald-500 text-black text-xs font-black uppercase disabled:opacity-40 flex items-center justify-center gap-1 transition-colors"
+                >
+                  {savingHead ? (
+                    <Loader2 size={12} className="animate-spin" />
+                  ) : (
+                    <UserPlus size={12} />
+                  )}
+                  Create User
+                </button>
+              </div>
+            </form>
+          )}
+
+          {loadingHeads ? (
+            <div
+              data-ocid="config.head.loading_state"
+              className="flex justify-center py-6"
+            >
+              <Loader2 size={20} className="text-emerald-400 animate-spin" />
+            </div>
+          ) : deptHeads.length === 0 ? (
+            <div
+              data-ocid="config.head.empty_state"
+              className="text-center py-8 border border-dashed border-white/10 rounded-2xl"
+            >
+              <Users size={28} className="text-white/10 mx-auto mb-2" />
+              <div className="text-white/20 text-xs font-bold uppercase">
+                No department users yet
+              </div>
+              <div className="text-white/10 text-[10px] mt-1">
+                Click "Add User" to create the first one
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {deptHeads.map((h, idx) => {
+                const dname =
+                  departments.find(
+                    (d) => String(d.id) === String(h.departmentId),
+                  )?.departmentLabel || "Unknown Department";
+                const isEditing = editHead?.pin === h.pin;
+                return (
+                  <div key={h.pin} data-ocid={`config.head.item.${idx + 1}`}>
+                    {isEditing ? (
+                      <form
+                        onSubmit={handleUpdateHead}
+                        className="bg-black/30 border border-emerald-500/20 rounded-2xl p-4 space-y-3"
+                      >
+                        <SectionLabel>Edit User</SectionLabel>
+                        <FieldInput
+                          label="Full Name"
+                          value={editHead.name}
+                          onChange={(v) =>
+                            setEditHead((p) => (p ? { ...p, name: v } : p))
+                          }
+                          placeholder="Full Name"
+                        />
+                        <div className="space-y-1.5">
+                          <span className="text-[10px] font-black text-white/40 uppercase tracking-widest">
+                            Assign Department
+                          </span>
+                          <select
+                            value={
+                              editHeadDeptId || String(editHead.departmentId)
+                            }
+                            onChange={(e) => setEditHeadDeptId(e.target.value)}
+                            className="w-full bg-black/40 rounded-xl px-3 py-2.5 text-sm text-white border border-white/5 outline-none focus:ring-1 ring-emerald-500"
+                          >
+                            {departments.map((d) => (
+                              <option key={String(d.id)} value={String(d.id)}>
+                                {d.departmentLabel}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            data-ocid={`config.head.cancel_button.${idx + 1}`}
+                            onClick={() => {
+                              setEditHead(null);
+                              setEditHeadDeptId("");
+                            }}
+                            className="flex-1 py-2 rounded-xl bg-white/5 text-white/60 text-xs font-bold uppercase"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={savingEditHead}
+                            data-ocid={`config.head.save_button.${idx + 1}`}
+                            className="flex-1 py-2 rounded-xl bg-emerald-500 text-black text-xs font-black uppercase disabled:opacity-40 flex items-center justify-center"
+                          >
+                            {savingEditHead ? (
+                              <Loader2 size={12} className="animate-spin" />
+                            ) : (
+                              "Save"
+                            )}
+                          </button>
+                        </div>
+                      </form>
+                    ) : (
+                      <div className="flex items-center justify-between bg-black/20 rounded-2xl px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-xl bg-white/5 flex items-center justify-center">
+                            <Users size={14} className="text-blue-400" />
+                          </div>
+                          <div>
+                            <div className="text-sm font-black text-white">
+                              {h.name}
+                            </div>
+                            <div className="text-[10px] text-white/30 font-bold mt-0.5">
+                              {dname} • PIN: {"•".repeat(h.pin.length)}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            data-ocid={`config.head.edit_button.${idx + 1}`}
+                            onClick={() => {
+                              setEditHead({ ...h });
+                              setEditHeadDeptId(String(h.departmentId));
+                              setAddingHead(false);
+                            }}
+                            className="text-blue-400/50 hover:text-blue-400 transition-colors p-1.5 rounded-lg hover:bg-blue-500/10"
+                          >
+                            <Edit3 size={14} />
+                          </button>
+                          <button
+                            type="button"
+                            data-ocid={`config.head.delete_button.${idx + 1}`}
+                            onClick={() => handleDeleteHead(h.pin)}
+                            className="text-rose-500/50 hover:text-rose-500 transition-colors p-1.5 rounded-lg hover:bg-rose-500/10"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── App Settings ── */}
+      <Card className="p-5 space-y-4">
+        <SectionLabel>
+          <Monitor size={12} /> App Settings
+        </SectionLabel>
+        <form onSubmit={saveConfig} className="space-y-3">
+          <FieldInput
+            label="Hospital Name"
+            value={appCfg.hospitalName}
+            onChange={(v) => setAppCfg((p) => ({ ...p, hospitalName: v }))}
+          />
+          <FieldInput
+            label="IT Department Label"
+            value={appCfg.departmentName}
+            onChange={(v) => setAppCfg((p) => ({ ...p, departmentName: v }))}
+          />
+          <FieldInput
+            label="TV Refresh Rate (seconds)"
+            type="number"
+            value={String(appCfg.tvRefreshRate)}
+            onChange={(v) =>
+              setAppCfg((p) => ({
+                ...p,
+                tvRefreshRate: Number.parseInt(v) || 30,
+              }))
+            }
+          />
+          <button
+            type="submit"
+            data-ocid="config.save_button"
+            disabled={savingCfg}
+            className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-black font-black py-3 rounded-2xl uppercase tracking-widest text-xs transition-colors flex items-center justify-center gap-2"
+          >
+            {savingCfg && <Loader2 size={14} className="animate-spin" />}
+            Save Configuration
+          </button>
+        </form>
+      </Card>
+
+      {/* ── Department Management ── */}
+      <Card className="p-5 space-y-4">
+        <SectionLabel>
+          <ClipboardList size={12} /> Department Management
+        </SectionLabel>
+        <div className="space-y-2">
+          {departments.map((d) => (
+            <div key={String(d.id)}>
+              {editDept && String(editDept.id) === String(d.id) ? (
+                <form
+                  onSubmit={handleUpdateDept}
+                  className="bg-black/30 rounded-2xl p-4 space-y-3"
+                >
+                  <div className="grid grid-cols-2 gap-2">
+                    <FieldInput
+                      label="Label"
+                      value={editDept.departmentLabel}
+                      onChange={(v) =>
+                        setEditDept((p) =>
+                          p ? { ...p, departmentLabel: v } : p,
+                        )
+                      }
+                    />
+                    <FieldInput
+                      label="Patient Count"
+                      type="number"
+                      value={String(editDept.patientCount)}
+                      onChange={(v) =>
+                        setEditDept((p) =>
+                          p ? { ...p, patientCount: BigInt(v || 0) } : p,
+                        )
+                      }
+                    />
+                    <div className="space-y-1.5">
+                      <span className="text-[10px] font-black text-white/40 uppercase tracking-widest">
+                        Icon
+                      </span>
+                      <select
+                        value={editDept.icon}
+                        onChange={(e) =>
+                          setEditDept((p) =>
+                            p ? { ...p, icon: e.target.value } : p,
+                          )
+                        }
+                        className="w-full bg-black/40 rounded-xl px-3 py-2.5 text-sm text-white border border-white/5 outline-none focus:ring-1 ring-emerald-500"
+                      >
+                        {ICON_OPTIONS.map((i) => (
+                          <option key={i} value={i}>
+                            {i}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <span className="text-[10px] font-black text-white/40 uppercase tracking-widest">
+                        Color
+                      </span>
+                      <select
+                        value={editDept.color}
+                        onChange={(e) =>
+                          setEditDept((p) =>
+                            p ? { ...p, color: e.target.value } : p,
+                          )
+                        }
+                        className="w-full bg-black/40 rounded-xl px-3 py-2.5 text-sm text-white border border-white/5 outline-none focus:ring-1 ring-emerald-500"
+                      >
+                        {COLOR_OPTIONS.map((c) => (
+                          <option key={c} value={c}>
+                            {c.replace("text-", "")}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setEditDept(null)}
+                      className="flex-1 py-2 rounded-xl bg-white/5 text-white/60 text-xs font-bold uppercase"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={savingDept}
+                      data-ocid={`config.dept.save_button.${Number(d.id)}`}
+                      className="flex-1 py-2 rounded-xl bg-emerald-500 text-black text-xs font-black uppercase disabled:opacity-40"
+                    >
+                      {savingDept ? (
+                        <Loader2 size={12} className="animate-spin mx-auto" />
+                      ) : (
+                        "Save"
+                      )}
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <div className="flex items-center justify-between bg-black/20 rounded-2xl px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    <DeptIcon icon={d.icon} className={`${d.color} w-5 h-5`} />
+                    <span className="text-sm font-bold text-white">
+                      {d.departmentLabel}
+                    </span>
+                    <Badge
+                      variant="outline"
+                      className="text-[9px] text-white/40 border-white/10"
+                    >
+                      {String(d.patientCount)}
+                    </Badge>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      data-ocid={`config.dept.edit_button.${Number(d.id)}`}
+                      onClick={() => setEditDept({ ...d })}
+                      className="text-white/30 hover:text-emerald-400 transition-colors"
+                    >
+                      <Edit3 size={14} />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+          {departments.length === 0 && (
+            <div className="text-center py-4 text-white/20 text-xs font-bold uppercase">
+              No departments yet. Go to the DEPT tab to add departments.
+            </div>
+          )}
+        </div>
+      </Card>
+    </div>
+  );
+}
+'''
+
+with open('/home/ubuntu/workspace/config_tab_new.txt', 'w') as f:
+    f.write(config_tab)
+print("Written")
