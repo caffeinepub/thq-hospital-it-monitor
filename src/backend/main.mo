@@ -96,6 +96,9 @@ actor {
   stable var stableNextFormTemplateId : Nat = 0;
   stable var stableNextReportId : Nat = 0;
   stable var stableAppConfig : ?AppConfig = null;
+  stable var stableWaPhoneNumberId : Text = "";
+  stable var stableWaAccessToken : Text = "";
+  stable var stableWaMessageFormat : Text = "Friendly Reminder: Please submit your {formName} report for {departmentName} by today. Kindly submit your report as early as possible.";
 
   // In-memory maps (rebuilt from stable storage on postupgrade)
   let departments = Map.empty<Nat, Department>();
@@ -265,5 +268,27 @@ actor {
 
   public query func getAppConfig() : async ?AppConfig {
     appConfig;
+  };
+
+  // WhatsApp Config
+
+  public type WaConfig = {
+    phoneNumberId : Text;
+    accessToken : Text;
+    messageFormat : Text;
+  };
+
+  public shared func setWaConfig(cfg : WaConfig) : async () {
+    stableWaPhoneNumberId := cfg.phoneNumberId;
+    stableWaAccessToken := cfg.accessToken;
+    stableWaMessageFormat := cfg.messageFormat;
+  };
+
+  public query func getWaConfig() : async WaConfig {
+    {
+      phoneNumberId = stableWaPhoneNumberId;
+      accessToken = stableWaAccessToken;
+      messageFormat = stableWaMessageFormat;
+    };
   };
 };

@@ -22,6 +22,7 @@ import {
   Baby,
   BarChart3,
   Bed,
+  Bell,
   Camera,
   CheckCircle2,
   ChevronDown,
@@ -38,11 +39,13 @@ import {
   Loader2,
   Lock,
   LogOut,
+  MessageSquare,
   Monitor,
   Plus,
   Printer,
   RefreshCcw,
   Save,
+  Send,
   Settings,
   ShieldCheck,
   Skull,
@@ -78,6 +81,15 @@ import { useActor } from "./hooks/useActor";
 // Constants
 // ─────────────────────────────────────────────
 const ADMIN_PIN = "786";
+
+// ─────────────────────────────────────────────
+// WA Config (stored in localStorage)
+// ─────────────────────────────────────────────
+interface WaConfig {
+  phoneNumberId: string;
+  accessToken: string;
+  messageFormat: string;
+}
 
 const MOCK_TIME_SERIES = [
   { time: "08:00", val: 15 },
@@ -274,7 +286,7 @@ type Session =
   | { type: "admin" }
   | { type: "deptHead"; head: DepartmentHead };
 
-type AdminTab = "TV" | "DEPT" | "REPORTS" | "FORMS" | "CONFIG";
+type AdminTab = "TV" | "DEPT" | "REPORTS" | "FORMS" | "CONFIG" | "NOTIFY";
 type DeptTab = "MY_DEPT" | "MY_REPORTS";
 
 // ─────────────────────────────────────────────
@@ -2036,6 +2048,15 @@ function ConfigTab({
   });
   const [savingCfg, setSavingCfg] = useState(false);
 
+  // WhatsApp Config state
+  const [waCfg, setWaCfg] = useState<WaConfig>({
+    phoneNumberId: "",
+    accessToken: "",
+    messageFormat:
+      "Friendly Reminder: Please submit your {formName} report for {departmentName} by today. Kindly submit your report as early as possible.",
+  });
+  const [savingWa, setSavingWa] = useState(false);
+
   // Department Users state
   const [deptHeads, setDeptHeads] = useState<DepartmentHead[]>([]);
   const [loadingHeads, setLoadingHeads] = useState(false);
@@ -2063,6 +2084,27 @@ function ConfigTab({
       .catch(() => toast.error("Failed to load dept heads"))
       .finally(() => setLoadingHeads(false));
   }, [actor]);
+
+  useEffect(() => {
+    if (!actor) return;
+    actor
+      .getWaConfig()
+      .then(setWaCfg)
+      .catch(() => {});
+  }, [actor]);
+
+  const saveWaConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingWa(true);
+    try {
+      await actor!.setWaConfig(waCfg);
+      toast.success("WhatsApp config saved");
+    } catch {
+      toast.error("Failed to save WhatsApp config");
+    } finally {
+      setSavingWa(false);
+    }
+  };
 
   const saveConfig = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -2446,6 +2488,64 @@ function ConfigTab({
         </form>
       </Card>
 
+      {/* ── WhatsApp Notifications Config ── */}
+      <Card className="p-5 space-y-4">
+        <SectionLabel>
+          <MessageSquare size={12} /> WhatsApp Notifications
+        </SectionLabel>
+        <div className="bg-blue-500/10 border border-blue-500/20 rounded-2xl px-4 py-3">
+          <p className="text-[11px] text-blue-300/80 font-bold">
+            Uses Meta WhatsApp Business API. Variables you can use in the
+            message format:{" "}
+            <span className="text-emerald-400">&#123;formName&#125;</span>,{" "}
+            <span className="text-emerald-400">&#123;departmentName&#125;</span>
+          </p>
+        </div>
+        <form onSubmit={saveWaConfig} className="space-y-3">
+          <FieldInput
+            label="Phone Number ID"
+            value={waCfg.phoneNumberId}
+            onChange={(v) => setWaCfg((p) => ({ ...p, phoneNumberId: v }))}
+            placeholder="e.g. 1234567890"
+          />
+          <FieldInput
+            label="Access Token"
+            type="password"
+            value={waCfg.accessToken}
+            onChange={(v) => setWaCfg((p) => ({ ...p, accessToken: v }))}
+            placeholder="Bearer token from Meta"
+          />
+          <div className="space-y-1.5">
+            <span className="text-[10px] font-black text-white/40 uppercase tracking-widest">
+              Message Format
+            </span>
+            <textarea
+              value={waCfg.messageFormat}
+              onChange={(e) =>
+                setWaCfg((p) => ({ ...p, messageFormat: e.target.value }))
+              }
+              rows={3}
+              data-ocid="config.wa.textarea"
+              className="w-full bg-black/40 rounded-xl px-3 py-2.5 text-sm font-medium text-white border border-white/5 outline-none focus:ring-1 ring-emerald-500 transition-all placeholder:text-white/20 resize-none"
+              placeholder="Friendly Reminder: Please submit your {formName} report for {departmentName} by today."
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={savingWa}
+            data-ocid="config.wa.save_button"
+            className="w-full py-2.5 rounded-xl bg-emerald-500 text-black text-xs font-black uppercase disabled:opacity-40 flex items-center justify-center gap-2 transition-colors"
+          >
+            {savingWa ? (
+              <Loader2 size={12} className="animate-spin" />
+            ) : (
+              <Save size={12} />
+            )}
+            Save WhatsApp Config
+          </button>
+        </form>
+      </Card>
+
       {/* ── Department Management ── */}
       <Card className="p-5 space-y-4">
         <SectionLabel>
@@ -2580,6 +2680,213 @@ function ConfigTab({
     </div>
   );
 }
+
+// ─────────────────────────────────────────────
+// Notify Tab
+// ─────────────────────────────────────────────
+function NotifyTab({
+  departments,
+  templates,
+  actor,
+}: {
+  departments: Department[];
+  templates: FormTemplate[];
+  actor: ReturnType<typeof useActor>["actor"];
+}) {
+  const [selectedDeptId, setSelectedDeptId] = useState("");
+  const [selectedFormId, setSelectedFormId] = useState("");
+  const [recipientPhone, setRecipientPhone] = useState("");
+  const [sending, setSending] = useState(false);
+  const [waConfig, setWaConfig] = useState<WaConfig>({
+    phoneNumberId: "",
+    accessToken: "",
+    messageFormat:
+      "Friendly Reminder: Please submit your {formName} report for {departmentName} by today. Kindly submit your report as early as possible.",
+  });
+
+  useEffect(() => {
+    if (!actor) return;
+    actor
+      .getWaConfig()
+      .then(setWaConfig)
+      .catch(() => {});
+  }, [actor]);
+  // legacy refresh
+  const refreshConfig = () => {
+    if (actor)
+      actor
+        .getWaConfig()
+        .then(setWaConfig)
+        .catch(() => {});
+  };
+
+  const selectedDept = departments.find((d) => String(d.id) === selectedDeptId);
+  const selectedForm = templates.find((t) => String(t.id) === selectedFormId);
+
+  const previewMsg = waConfig.messageFormat
+    ? waConfig.messageFormat
+        .replace("{formName}", selectedForm?.title || "[Form Name]")
+        .replace(
+          "{departmentName}",
+          selectedDept?.departmentLabel || "[Department Name]",
+        )
+    : "";
+
+  const handleSend = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!waConfig.phoneNumberId || !waConfig.accessToken) {
+      toast.error("WhatsApp API not configured. Go to CONFIG tab.");
+      return;
+    }
+    if (!selectedDeptId) {
+      toast.error("Please select a department.");
+      return;
+    }
+    if (!recipientPhone) {
+      toast.error("Please enter a recipient phone number.");
+      return;
+    }
+    setSending(true);
+    try {
+      const res = await fetch(
+        `https://graph.facebook.com/v18.0/${waConfig.phoneNumberId}/messages`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${waConfig.accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            messaging_product: "whatsapp",
+            to: recipientPhone,
+            type: "text",
+            text: { body: previewMsg },
+          }),
+        },
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as any)?.error?.message || res.statusText);
+      }
+      toast.success("Notification sent!");
+    } catch (err: any) {
+      toast.error(`Failed: ${err?.message || "Unknown error"}`);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="space-y-5 pb-28">
+      <div className="flex items-center justify-between">
+        <h2 className="text-white font-black flex items-center gap-2 uppercase">
+          <Bell size={20} className="text-emerald-400" /> WhatsApp Notifications
+        </h2>
+        <button
+          type="button"
+          onClick={refreshConfig}
+          className="text-white/30 hover:text-emerald-400 transition-colors"
+          title="Reload config"
+        >
+          <RefreshCcw size={14} />
+        </button>
+      </div>
+
+      {!waConfig.phoneNumberId && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl px-4 py-3 flex items-start gap-3">
+          <MessageSquare size={16} className="text-amber-400 shrink-0 mt-0.5" />
+          <p className="text-[11px] text-amber-300/80 font-bold">
+            WhatsApp API is not configured. Go to the{" "}
+            <span className="text-emerald-400 underline cursor-pointer">
+              CONFIG
+            </span>{" "}
+            tab and add your Phone Number ID and Access Token.
+          </p>
+        </div>
+      )}
+
+      <Card className="p-5 space-y-4">
+        <SectionLabel>
+          <Send size={12} /> Send Notification
+        </SectionLabel>
+        <form onSubmit={handleSend} className="space-y-3">
+          <div className="space-y-1.5">
+            <span className="text-[10px] font-black text-white/40 uppercase tracking-widest">
+              Select Department
+            </span>
+            <select
+              value={selectedDeptId}
+              onChange={(e) => setSelectedDeptId(e.target.value)}
+              data-ocid="notify.dept.select"
+              className="w-full bg-black/40 rounded-xl px-3 py-2.5 text-sm text-white border border-white/5 outline-none focus:ring-1 ring-emerald-500"
+            >
+              <option value="">-- Select Department --</option>
+              {departments.map((d) => (
+                <option key={String(d.id)} value={String(d.id)}>
+                  {d.departmentLabel}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="space-y-1.5">
+            <span className="text-[10px] font-black text-white/40 uppercase tracking-widest">
+              Select Form
+            </span>
+            <select
+              value={selectedFormId}
+              onChange={(e) => setSelectedFormId(e.target.value)}
+              data-ocid="notify.form.select"
+              className="w-full bg-black/40 rounded-xl px-3 py-2.5 text-sm text-white border border-white/5 outline-none focus:ring-1 ring-emerald-500"
+            >
+              <option value="">-- Select Form (optional) --</option>
+              {templates.map((t) => (
+                <option key={String(t.id)} value={String(t.id)}>
+                  {t.title}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <FieldInput
+            label="Recipient Phone"
+            value={recipientPhone}
+            onChange={setRecipientPhone}
+            placeholder="+92XXXXXXXXXX"
+          />
+
+          <div className="space-y-1.5">
+            <span className="text-[10px] font-black text-white/40 uppercase tracking-widest">
+              Message Preview
+            </span>
+            <textarea
+              readOnly
+              value={previewMsg}
+              rows={3}
+              data-ocid="notify.preview.textarea"
+              className="w-full bg-black/20 rounded-xl px-3 py-2.5 text-sm font-medium text-white/60 border border-white/5 outline-none resize-none"
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={sending || !waConfig.phoneNumberId}
+            data-ocid="notify.send_button"
+            className="w-full py-3 rounded-xl bg-emerald-500 text-black text-sm font-black uppercase disabled:opacity-40 flex items-center justify-center gap-2 transition-colors hover:bg-emerald-400"
+          >
+            {sending ? (
+              <Loader2 size={16} className="animate-spin" />
+            ) : (
+              <Send size={16} />
+            )}
+            {sending ? "Sending..." : "Send Notification"}
+          </button>
+        </form>
+      </Card>
+    </div>
+  );
+}
+
 // Nav Button
 // ─────────────────────────────────────────────
 function NavBtn({
@@ -2810,6 +3117,13 @@ export default function App() {
                     />
                   </ErrorBoundary>
                 )}
+                {adminTab === "NOTIFY" && (
+                  <NotifyTab
+                    departments={departments}
+                    templates={templates}
+                    actor={actor}
+                  />
+                )}
               </>
             )}
 
@@ -2875,6 +3189,12 @@ export default function App() {
                 onClick={() => setAdminTab("CONFIG")}
                 label="CONFIG"
                 icon={Settings}
+              />
+              <NavBtn
+                active={adminTab === "NOTIFY"}
+                onClick={() => setAdminTab("NOTIFY")}
+                label="NOTIFY"
+                icon={Bell}
               />
             </>
           ) : (

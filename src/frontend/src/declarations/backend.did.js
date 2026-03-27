@@ -42,6 +42,11 @@ export const AppConfig = IDL.Record({
   'departmentName' : IDL.Text,
   'hospitalName' : IDL.Text,
 });
+export const WaConfig = IDL.Record({
+  'phoneNumberId' : IDL.Text,
+  'accessToken' : IDL.Text,
+  'messageFormat' : IDL.Text,
+});
 export const UserProfile = IDL.Record({ 'name' : IDL.Text });
 export const DepartmentHead = IDL.Record({
   'pin' : IDL.Text,
@@ -84,6 +89,8 @@ export const idlService = IDL.Service({
       ['query'],
     ),
   'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
+  'getWaConfig' : IDL.Func([], [WaConfig], ['query']),
+  'setWaConfig' : IDL.Func([WaConfig], [], []),
   'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
   'setAppConfig' : IDL.Func([AppConfig], [], []),
   'submitReport' : IDL.Func(
@@ -129,6 +136,11 @@ export const idlFactory = ({ IDL }) => {
     'tvRefreshRate' : IDL.Nat,
     'departmentName' : IDL.Text,
     'hospitalName' : IDL.Text,
+  });
+  const WaConfig = IDL.Record({
+    'phoneNumberId' : IDL.Text,
+    'accessToken' : IDL.Text,
+    'messageFormat' : IDL.Text,
   });
   const UserProfile = IDL.Record({ 'name' : IDL.Text });
   const DepartmentHead = IDL.Record({
@@ -180,6 +192,8 @@ export const idlFactory = ({ IDL }) => {
         ['query'],
       ),
     'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
+    'getWaConfig' : IDL.Func([], [WaConfig], ['query']),
+    'setWaConfig' : IDL.Func([WaConfig], [], []),
     'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
     'setAppConfig' : IDL.Func([AppConfig], [], []),
     'submitReport' : IDL.Func(

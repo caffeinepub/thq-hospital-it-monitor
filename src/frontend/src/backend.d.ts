@@ -39,6 +39,11 @@ export interface AppConfig {
     departmentName: string;
     hospitalName: string;
 }
+export interface WaConfig {
+    phoneNumberId: string;
+    accessToken: string;
+    messageFormat: string;
+}
 export interface Report {
     id: bigint;
     fieldValues: Array<FieldValue>;
@@ -75,9 +80,11 @@ export interface backendInterface {
     getReport(id: bigint): Promise<Report | null>;
     getReportsByDepartment(departmentId: bigint): Promise<Array<Report>>;
     getUserProfile(user: Principal): Promise<UserProfile | null>;
+    getWaConfig(): Promise<WaConfig>;
     isCallerAdmin(): Promise<boolean>;
     saveCallerUserProfile(profile: UserProfile): Promise<void>;
     setAppConfig(config: AppConfig): Promise<void>;
+    setWaConfig(config: WaConfig): Promise<void>;
     submitReport(departmentId: bigint, submittedBy: string, fieldValues: Array<FieldValue>): Promise<bigint>;
     updateDepartment(department: Department): Promise<void>;
     updateDepartmentHead(departmentHead: DepartmentHead): Promise<void>;

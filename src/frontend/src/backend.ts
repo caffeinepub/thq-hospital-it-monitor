@@ -116,6 +116,11 @@ export interface AppConfig {
     departmentName: string;
     hospitalName: string;
 }
+export interface WaConfig {
+    phoneNumberId: string;
+    accessToken: string;
+    messageFormat: string;
+}
 export interface Report {
     id: bigint;
     fieldValues: Array<FieldValue>;
@@ -154,6 +159,8 @@ export interface backendInterface {
     getReportsByDepartment(departmentId: bigint): Promise<Array<Report>>;
     getUserProfile(user: Principal): Promise<UserProfile | null>;
     isCallerAdmin(): Promise<boolean>;
+    getWaConfig(): Promise<WaConfig>;
+    setWaConfig(config: WaConfig): Promise<void>;
     saveCallerUserProfile(profile: UserProfile): Promise<void>;
     setAppConfig(config: AppConfig): Promise<void>;
     submitReport(departmentId: bigint, submittedBy: string, fieldValues: Array<FieldValue>): Promise<bigint>;
@@ -497,6 +504,34 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.setAppConfig(arg0);
+            return result;
+        }
+    }
+    async getWaConfig(): Promise<WaConfig> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getWaConfig();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getWaConfig();
+            return result;
+        }
+    }
+    async setWaConfig(arg0: WaConfig): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.setWaConfig(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.setWaConfig(arg0);
             return result;
         }
     }

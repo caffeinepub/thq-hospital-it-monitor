@@ -15,6 +15,11 @@ export interface AppConfig {
   'departmentName' : string,
   'hospitalName' : string,
 }
+export interface WaConfig {
+  'phoneNumberId' : string,
+  'accessToken' : string,
+  'messageFormat' : string,
+}
 export interface Department {
   'id' : bigint,
   'icon' : string,
@@ -68,6 +73,8 @@ export interface _SERVICE {
   'getReportsByDepartment' : ActorMethod<[bigint], Array<Report>>,
   'getUserProfile' : ActorMethod<[Principal], [] | [UserProfile]>,
   'isCallerAdmin' : ActorMethod<[], boolean>,
+  'getWaConfig' : ActorMethod<[], WaConfig>,
+  'setWaConfig' : ActorMethod<[WaConfig], undefined>,
   'saveCallerUserProfile' : ActorMethod<[UserProfile], undefined>,
   'setAppConfig' : ActorMethod<[AppConfig], undefined>,
   'submitReport' : ActorMethod<[bigint, string, Array<FieldValue>], bigint>,
