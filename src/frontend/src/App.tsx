@@ -4532,16 +4532,22 @@ export default function App() {
     async (deptId?: bigint) => {
       if (!actor) return;
       setReportsLoading(true);
-      try {
-        const reps = deptId
-          ? await actor.getReportsByDepartment(deptId)
-          : await actor.getAllReports();
-        setReports(reps);
-      } catch {
-        toast.error("Failed to load reports");
-      } finally {
-        setReportsLoading(false);
+      for (let attempt = 0; attempt < 4; attempt++) {
+        if (attempt > 0)
+          await new Promise((r) => setTimeout(r, 1500 * attempt));
+        try {
+          const reps = deptId
+            ? await actor.getReportsByDepartment(deptId)
+            : await actor.getAllReports();
+          setReports(reps);
+          setReportsLoading(false);
+          return;
+        } catch {
+          // retry
+        }
       }
+      toast.error("Failed to load reports. Please refresh.");
+      setReportsLoading(false);
     },
     [actor],
   );
