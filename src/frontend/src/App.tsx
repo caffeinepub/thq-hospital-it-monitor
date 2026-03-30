@@ -4504,8 +4504,11 @@ export default function App() {
   const loadData = useCallback(async () => {
     if (!actor) return;
     setDataLoading(true);
-    for (let attempt = 0; attempt < 4; attempt++) {
-      if (attempt > 0) await new Promise((r) => setTimeout(r, 1500 * attempt));
+    for (let attempt = 0; attempt < 8; attempt++) {
+      if (attempt > 0)
+        await new Promise((r) =>
+          setTimeout(r, Math.min(2000 * attempt, 12000)),
+        );
       try {
         const [depts, tmpls, cfg, extForms] = await Promise.all([
           actor.getAllDepartments(),
@@ -4524,17 +4527,22 @@ export default function App() {
         void e;
       }
     }
-    toast.error("Failed to load data. Please refresh.");
+    // All attempts failed — auto-retry after 5 seconds without user intervention
     setDataLoading(false);
+    setTimeout(() => {
+      void loadData();
+    }, 5000);
   }, [actor]);
 
   const loadReports = useCallback(
     async (deptId?: bigint) => {
       if (!actor) return;
       setReportsLoading(true);
-      for (let attempt = 0; attempt < 4; attempt++) {
+      for (let attempt = 0; attempt < 8; attempt++) {
         if (attempt > 0)
-          await new Promise((r) => setTimeout(r, 1500 * attempt));
+          await new Promise((r) =>
+            setTimeout(r, Math.min(2000 * attempt, 12000)),
+          );
         try {
           const reps = deptId
             ? await actor.getReportsByDepartment(deptId)
@@ -4546,8 +4554,11 @@ export default function App() {
           // retry
         }
       }
-      toast.error("Failed to load reports. Please refresh.");
+      // Auto-retry after 5 seconds rather than forcing manual refresh
       setReportsLoading(false);
+      setTimeout(() => {
+        void loadReports(deptId);
+      }, 5000);
     },
     [actor],
   );

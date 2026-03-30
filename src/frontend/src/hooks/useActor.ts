@@ -3,7 +3,8 @@ import { useEffect } from "react";
 import type { backendInterface } from "../backend";
 import { createActorWithConfig } from "../config";
 
-const ACTOR_QUERY_KEY = "actor";
+// Static key — actor never needs to recreate (this app uses PIN auth, not Internet Identity)
+const ACTOR_QUERY_KEY = "actor-anon";
 
 export function useActor() {
   const queryClient = useQueryClient();
@@ -11,16 +12,17 @@ export function useActor() {
   const actorQuery = useQuery<backendInterface>({
     queryKey: [ACTOR_QUERY_KEY],
     queryFn: async () => {
-      // Always use anonymous actor. This app uses PIN-based auth, not Internet Identity.
-      // Using II caused sessions to call _initializeAccessControlWithSecret on load,
-      // which could fail and leave the actor null, blocking all data loads.
+      // Always use anonymous actor — app uses PIN-based auth, not Internet Identity.
+      // Never call _initializeAccessControlWithSecret (method does not exist in backend).
       return await createActorWithConfig();
     },
     staleTime: Number.POSITIVE_INFINITY,
+    retry: 3,
+    retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 10000),
     enabled: true,
   });
 
-  // When the actor becomes available, trigger dependent data queries
+  // When actor becomes available, invalidate all dependent queries so they refetch
   useEffect(() => {
     if (actorQuery.data) {
       queryClient.invalidateQueries({
