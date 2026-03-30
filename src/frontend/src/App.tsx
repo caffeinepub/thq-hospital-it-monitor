@@ -3315,11 +3315,19 @@ function ConfigTab({
   useEffect(() => {
     if (!actor) return;
     setLoadingHeads(true);
-    actor
-      .getAllDepartmentHeads()
-      .then(setDeptHeads)
-      .catch(() => toast.error("Failed to load dept heads"))
-      .finally(() => setLoadingHeads(false));
+    const load = async (retries = 3): Promise<void> => {
+      try {
+        const heads = await actor.getAllDepartmentHeads();
+        setDeptHeads(heads);
+      } catch {
+        if (retries > 0) {
+          await new Promise((r) => setTimeout(r, 1500));
+          return load(retries - 1);
+        }
+        toast.error("Failed to load dept heads");
+      }
+    };
+    load().finally(() => setLoadingHeads(false));
   }, [actor]);
 
   useEffect(() => {
@@ -4415,6 +4423,36 @@ export default function App() {
   const [adminTab, setAdminTab] = useState<AdminTab>("TV");
   const [deptTab, setDeptTab] = useState<DeptTab>("MY_DEPT");
 
+  // PWA install prompt
+  const [installPrompt, setInstallPrompt] = useState<any>(null);
+  const [appInstalled, setAppInstalled] = useState(false);
+  useEffect(() => {
+    const handler = (e: any) => {
+      e.preventDefault();
+      setInstallPrompt(e);
+    };
+    const installedHandler = () => setAppInstalled(true);
+    window.addEventListener("beforeinstallprompt", handler);
+    window.addEventListener("appinstalled", installedHandler);
+    // Check if already installed
+    if (window.matchMedia?.("(display-mode: standalone)")?.matches) {
+      setAppInstalled(true);
+    }
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handler);
+      window.removeEventListener("appinstalled", installedHandler);
+    };
+  }, []);
+  const handleInstallPWA = async () => {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    const result = await installPrompt.userChoice;
+    if (result.outcome === "accepted") {
+      setInstallPrompt(null);
+      setAppInstalled(true);
+    }
+  };
+
   // Feature 11: Auto-logout after 15 minutes inactivity
   const inactivityRef = React.useRef<ReturnType<typeof setTimeout> | null>(
     null,
@@ -4466,23 +4504,28 @@ export default function App() {
   const loadData = useCallback(async () => {
     if (!actor) return;
     setDataLoading(true);
-    try {
-      const [depts, tmpls, cfg, extForms] = await Promise.all([
-        actor.getAllDepartments(),
-        actor.getAllFormTemplates(),
-        actor.getAppConfig(),
-        actor.getAllExternalForms(),
-      ]);
-      setDepartments(depts);
-      setHasLoadedOnce(true);
-      setTemplates(tmpls as any);
-      setConfig(cfg);
-      setExternalForms(extForms as ExternalForm[]);
-    } catch {
-      toast.error("Failed to load data");
-    } finally {
-      setDataLoading(false);
+    for (let attempt = 0; attempt < 4; attempt++) {
+      if (attempt > 0) await new Promise((r) => setTimeout(r, 1500 * attempt));
+      try {
+        const [depts, tmpls, cfg, extForms] = await Promise.all([
+          actor.getAllDepartments(),
+          actor.getAllFormTemplates(),
+          actor.getAppConfig(),
+          actor.getAllExternalForms(),
+        ]);
+        setDepartments(depts);
+        setHasLoadedOnce(true);
+        setTemplates(tmpls as any);
+        setConfig(cfg);
+        setExternalForms(extForms as ExternalForm[]);
+        setDataLoading(false);
+        return;
+      } catch (e) {
+        void e;
+      }
     }
+    toast.error("Failed to load data. Please refresh.");
+    setDataLoading(false);
   }, [actor]);
 
   const loadReports = useCallback(
@@ -4574,6 +4617,15 @@ export default function App() {
           <span className="text-emerald-400 uppercase">
             {session.type === "admin" ? "Admin" : session.head.name}
           </span>
+          {installPrompt && !appInstalled && (
+            <button
+              type="button"
+              onClick={handleInstallPWA}
+              className="flex items-center gap-1 text-emerald-400/80 hover:text-emerald-400 transition-colors uppercase bg-emerald-400/10 px-2 py-0.5 rounded-md"
+            >
+              <Download size={9} /> Install App
+            </button>
+          )}
           <button
             type="button"
             onClick={handleLogout}
