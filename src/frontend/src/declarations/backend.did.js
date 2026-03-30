@@ -13,12 +13,30 @@ export const UserRole = IDL.Variant({
   'user' : IDL.Null,
   'guest' : IDL.Null,
 });
+export const ActivityLogEntry = IDL.Record({
+  'id' : IDL.Nat,
+  'action' : IDL.Text,
+  'user' : IDL.Text,
+  'timestamp' : IDL.Int,
+});
+export const DepartmentHead = IDL.Record({
+  'pin' : IDL.Text,
+  'name' : IDL.Text,
+  'departmentId' : IDL.Nat,
+});
 export const Department = IDL.Record({
   'id' : IDL.Nat,
   'icon' : IDL.Text,
   'color' : IDL.Text,
   'departmentLabel' : IDL.Text,
   'patientCount' : IDL.Nat,
+});
+export const ExternalForm = IDL.Record({
+  'id' : IDL.Nat,
+  'title' : IDL.Text,
+  'platform' : IDL.Text,
+  'embedUrl' : IDL.Text,
+  'departmentId' : IDL.Nat,
 });
 export const FormTemplate = IDL.Record({
   'id' : IDL.Nat,
@@ -37,28 +55,43 @@ export const Report = IDL.Record({
   'timestamp' : IDL.Int,
   'departmentId' : IDL.Nat,
 });
+export const SubmissionComment = IDL.Record({
+  'author' : IDL.Text,
+  'comment' : IDL.Text,
+  'timestamp' : IDL.Int,
+  'reportId' : IDL.Nat,
+});
 export const AppConfig = IDL.Record({
   'tvRefreshRate' : IDL.Nat,
   'departmentName' : IDL.Text,
   'hospitalName' : IDL.Text,
 });
-export const WaConfig = IDL.Record({
-  'phoneNumberId' : IDL.Text,
-  'accessToken' : IDL.Text,
-  'messageFormat' : IDL.Text,
+export const BackupData = IDL.Record({
+  'departments' : IDL.Vec(Department),
+  'formTemplates' : IDL.Vec(FormTemplate),
+  'departmentHeads' : IDL.Vec(DepartmentHead),
+  'externalForms' : IDL.Vec(ExternalForm),
+  'reports' : IDL.Vec(Report),
 });
 export const UserProfile = IDL.Record({ 'name' : IDL.Text });
-export const DepartmentHead = IDL.Record({
-  'pin' : IDL.Text,
-  'name' : IDL.Text,
-  'departmentId' : IDL.Nat,
+export const WaConfig = IDL.Record({
+  'messageFormat' : IDL.Text,
+  'accessToken' : IDL.Text,
+  'phoneNumberId' : IDL.Text,
 });
 
 export const idlService = IDL.Service({
   '_initializeAccessControlWithSecret' : IDL.Func([IDL.Text], [], []),
+  'addActivityLog' : IDL.Func([IDL.Text, IDL.Text], [], []),
   'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
+  'clearActivityLog' : IDL.Func([], [], []),
   'createDepartment' : IDL.Func([IDL.Text, IDL.Text, IDL.Text], [IDL.Nat], []),
   'createDepartmentHead' : IDL.Func([IDL.Text, IDL.Text, IDL.Nat], [], []),
+  'createExternalForm' : IDL.Func(
+      [IDL.Text, IDL.Text, IDL.Text, IDL.Nat],
+      [IDL.Nat],
+      [],
+    ),
   'createFormTemplate' : IDL.Func(
       [IDL.Nat, IDL.Text, IDL.Vec(IDL.Text)],
       [IDL.Nat],
@@ -66,12 +99,31 @@ export const idlService = IDL.Service({
     ),
   'deleteDepartment' : IDL.Func([IDL.Nat], [], []),
   'deleteDepartmentHead' : IDL.Func([IDL.Text], [], []),
+  'deleteExternalForm' : IDL.Func([IDL.Nat], [], []),
   'deleteFormTemplate' : IDL.Func([IDL.Nat], [], []),
+  'getActivityLog' : IDL.Func([], [IDL.Vec(ActivityLogEntry)], ['query']),
   'getAllDepartmentHeads' : IDL.Func([], [IDL.Vec(DepartmentHead)], ['query']),
   'getAllDepartments' : IDL.Func([], [IDL.Vec(Department)], ['query']),
+  'getAllExternalForms' : IDL.Func([], [IDL.Vec(ExternalForm)], ['query']),
+  'getAllFormDeadlines' : IDL.Func(
+      [],
+      [IDL.Vec(IDL.Tuple(IDL.Nat, IDL.Text))],
+      ['query'],
+    ),
   'getAllFormTemplates' : IDL.Func([], [IDL.Vec(FormTemplate)], ['query']),
+  'getAllFormVersions' : IDL.Func(
+      [],
+      [IDL.Vec(IDL.Tuple(IDL.Nat, IDL.Nat))],
+      ['query'],
+    ),
   'getAllReports' : IDL.Func([], [IDL.Vec(Report)], ['query']),
+  'getAllSubmissionComments' : IDL.Func(
+      [],
+      [IDL.Vec(SubmissionComment)],
+      ['query'],
+    ),
   'getAppConfig' : IDL.Func([], [IDL.Opt(AppConfig)], ['query']),
+  'getBackupData' : IDL.Func([], [BackupData], ['query']),
   'getCallerUserProfile' : IDL.Func([], [IDL.Opt(UserProfile)], ['query']),
   'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
   'getDepartment' : IDL.Func([IDL.Nat], [IDL.Opt(Department)], ['query']),
@@ -80,19 +132,29 @@ export const idlService = IDL.Service({
       [IDL.Opt(DepartmentHead)],
       ['query'],
     ),
+  'getFormDeadline' : IDL.Func([IDL.Nat], [IDL.Opt(IDL.Text)], ['query']),
   'getFormTemplate' : IDL.Func([IDL.Nat], [IDL.Opt(FormTemplate)], ['query']),
+  'getFormVersion' : IDL.Func([IDL.Nat], [IDL.Nat], ['query']),
   'getReport' : IDL.Func([IDL.Nat], [IDL.Opt(Report)], ['query']),
   'getReportsByDepartment' : IDL.Func([IDL.Nat], [IDL.Vec(Report)], ['query']),
+  'getSubmissionComment' : IDL.Func(
+      [IDL.Nat],
+      [IDL.Opt(SubmissionComment)],
+      ['query'],
+    ),
   'getUserProfile' : IDL.Func(
       [IDL.Principal],
       [IDL.Opt(UserProfile)],
       ['query'],
     ),
-  'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
   'getWaConfig' : IDL.Func([], [WaConfig], ['query']),
-  'setWaConfig' : IDL.Func([WaConfig], [], []),
+  'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
+  'removeFormDeadline' : IDL.Func([IDL.Nat], [], []),
   'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
   'setAppConfig' : IDL.Func([AppConfig], [], []),
+  'setFormDeadline' : IDL.Func([IDL.Nat, IDL.Text], [], []),
+  'setSubmissionComment' : IDL.Func([IDL.Nat, IDL.Text, IDL.Text], [], []),
+  'setWaConfig' : IDL.Func([WaConfig], [], []),
   'submitReport' : IDL.Func(
       [IDL.Nat, IDL.Text, IDL.Vec(FieldValue)],
       [IDL.Nat],
@@ -100,6 +162,7 @@ export const idlService = IDL.Service({
     ),
   'updateDepartment' : IDL.Func([Department], [], []),
   'updateDepartmentHead' : IDL.Func([DepartmentHead], [], []),
+  'updateExternalForm' : IDL.Func([ExternalForm], [], []),
   'updateFormTemplate' : IDL.Func([FormTemplate], [], []),
 });
 
@@ -111,12 +174,30 @@ export const idlFactory = ({ IDL }) => {
     'user' : IDL.Null,
     'guest' : IDL.Null,
   });
+  const ActivityLogEntry = IDL.Record({
+    'id' : IDL.Nat,
+    'action' : IDL.Text,
+    'user' : IDL.Text,
+    'timestamp' : IDL.Int,
+  });
+  const DepartmentHead = IDL.Record({
+    'pin' : IDL.Text,
+    'name' : IDL.Text,
+    'departmentId' : IDL.Nat,
+  });
   const Department = IDL.Record({
     'id' : IDL.Nat,
     'icon' : IDL.Text,
     'color' : IDL.Text,
     'departmentLabel' : IDL.Text,
     'patientCount' : IDL.Nat,
+  });
+  const ExternalForm = IDL.Record({
+    'id' : IDL.Nat,
+    'title' : IDL.Text,
+    'platform' : IDL.Text,
+    'embedUrl' : IDL.Text,
+    'departmentId' : IDL.Nat,
   });
   const FormTemplate = IDL.Record({
     'id' : IDL.Nat,
@@ -132,32 +213,47 @@ export const idlFactory = ({ IDL }) => {
     'timestamp' : IDL.Int,
     'departmentId' : IDL.Nat,
   });
+  const SubmissionComment = IDL.Record({
+    'author' : IDL.Text,
+    'comment' : IDL.Text,
+    'timestamp' : IDL.Int,
+    'reportId' : IDL.Nat,
+  });
   const AppConfig = IDL.Record({
     'tvRefreshRate' : IDL.Nat,
     'departmentName' : IDL.Text,
     'hospitalName' : IDL.Text,
   });
-  const WaConfig = IDL.Record({
-    'phoneNumberId' : IDL.Text,
-    'accessToken' : IDL.Text,
-    'messageFormat' : IDL.Text,
+  const BackupData = IDL.Record({
+    'departments' : IDL.Vec(Department),
+    'formTemplates' : IDL.Vec(FormTemplate),
+    'departmentHeads' : IDL.Vec(DepartmentHead),
+    'externalForms' : IDL.Vec(ExternalForm),
+    'reports' : IDL.Vec(Report),
   });
   const UserProfile = IDL.Record({ 'name' : IDL.Text });
-  const DepartmentHead = IDL.Record({
-    'pin' : IDL.Text,
-    'name' : IDL.Text,
-    'departmentId' : IDL.Nat,
+  const WaConfig = IDL.Record({
+    'messageFormat' : IDL.Text,
+    'accessToken' : IDL.Text,
+    'phoneNumberId' : IDL.Text,
   });
   
   return IDL.Service({
     '_initializeAccessControlWithSecret' : IDL.Func([IDL.Text], [], []),
+    'addActivityLog' : IDL.Func([IDL.Text, IDL.Text], [], []),
     'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
+    'clearActivityLog' : IDL.Func([], [], []),
     'createDepartment' : IDL.Func(
         [IDL.Text, IDL.Text, IDL.Text],
         [IDL.Nat],
         [],
       ),
     'createDepartmentHead' : IDL.Func([IDL.Text, IDL.Text, IDL.Nat], [], []),
+    'createExternalForm' : IDL.Func(
+        [IDL.Text, IDL.Text, IDL.Text, IDL.Nat],
+        [IDL.Nat],
+        [],
+      ),
     'createFormTemplate' : IDL.Func(
         [IDL.Nat, IDL.Text, IDL.Vec(IDL.Text)],
         [IDL.Nat],
@@ -165,12 +261,35 @@ export const idlFactory = ({ IDL }) => {
       ),
     'deleteDepartment' : IDL.Func([IDL.Nat], [], []),
     'deleteDepartmentHead' : IDL.Func([IDL.Text], [], []),
+    'deleteExternalForm' : IDL.Func([IDL.Nat], [], []),
     'deleteFormTemplate' : IDL.Func([IDL.Nat], [], []),
-    'getAllDepartmentHeads' : IDL.Func([], [IDL.Vec(DepartmentHead)], ['query']),
+    'getActivityLog' : IDL.Func([], [IDL.Vec(ActivityLogEntry)], ['query']),
+    'getAllDepartmentHeads' : IDL.Func(
+        [],
+        [IDL.Vec(DepartmentHead)],
+        ['query'],
+      ),
     'getAllDepartments' : IDL.Func([], [IDL.Vec(Department)], ['query']),
+    'getAllExternalForms' : IDL.Func([], [IDL.Vec(ExternalForm)], ['query']),
+    'getAllFormDeadlines' : IDL.Func(
+        [],
+        [IDL.Vec(IDL.Tuple(IDL.Nat, IDL.Text))],
+        ['query'],
+      ),
     'getAllFormTemplates' : IDL.Func([], [IDL.Vec(FormTemplate)], ['query']),
+    'getAllFormVersions' : IDL.Func(
+        [],
+        [IDL.Vec(IDL.Tuple(IDL.Nat, IDL.Nat))],
+        ['query'],
+      ),
     'getAllReports' : IDL.Func([], [IDL.Vec(Report)], ['query']),
+    'getAllSubmissionComments' : IDL.Func(
+        [],
+        [IDL.Vec(SubmissionComment)],
+        ['query'],
+      ),
     'getAppConfig' : IDL.Func([], [IDL.Opt(AppConfig)], ['query']),
+    'getBackupData' : IDL.Func([], [BackupData], ['query']),
     'getCallerUserProfile' : IDL.Func([], [IDL.Opt(UserProfile)], ['query']),
     'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
     'getDepartment' : IDL.Func([IDL.Nat], [IDL.Opt(Department)], ['query']),
@@ -179,11 +298,18 @@ export const idlFactory = ({ IDL }) => {
         [IDL.Opt(DepartmentHead)],
         ['query'],
       ),
+    'getFormDeadline' : IDL.Func([IDL.Nat], [IDL.Opt(IDL.Text)], ['query']),
     'getFormTemplate' : IDL.Func([IDL.Nat], [IDL.Opt(FormTemplate)], ['query']),
+    'getFormVersion' : IDL.Func([IDL.Nat], [IDL.Nat], ['query']),
     'getReport' : IDL.Func([IDL.Nat], [IDL.Opt(Report)], ['query']),
     'getReportsByDepartment' : IDL.Func(
         [IDL.Nat],
         [IDL.Vec(Report)],
+        ['query'],
+      ),
+    'getSubmissionComment' : IDL.Func(
+        [IDL.Nat],
+        [IDL.Opt(SubmissionComment)],
         ['query'],
       ),
     'getUserProfile' : IDL.Func(
@@ -191,11 +317,14 @@ export const idlFactory = ({ IDL }) => {
         [IDL.Opt(UserProfile)],
         ['query'],
       ),
-    'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
     'getWaConfig' : IDL.Func([], [WaConfig], ['query']),
-    'setWaConfig' : IDL.Func([WaConfig], [], []),
+    'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
+    'removeFormDeadline' : IDL.Func([IDL.Nat], [], []),
     'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
     'setAppConfig' : IDL.Func([AppConfig], [], []),
+    'setFormDeadline' : IDL.Func([IDL.Nat, IDL.Text], [], []),
+    'setSubmissionComment' : IDL.Func([IDL.Nat, IDL.Text, IDL.Text], [], []),
+    'setWaConfig' : IDL.Func([WaConfig], [], []),
     'submitReport' : IDL.Func(
         [IDL.Nat, IDL.Text, IDL.Vec(FieldValue)],
         [IDL.Nat],
@@ -203,6 +332,7 @@ export const idlFactory = ({ IDL }) => {
       ),
     'updateDepartment' : IDL.Func([Department], [], []),
     'updateDepartmentHead' : IDL.Func([DepartmentHead], [], []),
+    'updateExternalForm' : IDL.Func([ExternalForm], [], []),
     'updateFormTemplate' : IDL.Func([FormTemplate], [], []),
   });
 };

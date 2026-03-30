@@ -10,15 +10,23 @@ import type { ActorMethod } from '@icp-sdk/core/agent';
 import type { IDL } from '@icp-sdk/core/candid';
 import type { Principal } from '@icp-sdk/core/principal';
 
+export interface ActivityLogEntry {
+  'id' : bigint,
+  'action' : string,
+  'user' : string,
+  'timestamp' : bigint,
+}
 export interface AppConfig {
   'tvRefreshRate' : bigint,
   'departmentName' : string,
   'hospitalName' : string,
 }
-export interface WaConfig {
-  'phoneNumberId' : string,
-  'accessToken' : string,
-  'messageFormat' : string,
+export interface BackupData {
+  'departments' : Array<Department>,
+  'formTemplates' : Array<FormTemplate>,
+  'departmentHeads' : Array<DepartmentHead>,
+  'externalForms' : Array<ExternalForm>,
+  'reports' : Array<Report>,
 }
 export interface Department {
   'id' : bigint,
@@ -30,6 +38,13 @@ export interface Department {
 export interface DepartmentHead {
   'pin' : string,
   'name' : string,
+  'departmentId' : bigint,
+}
+export interface ExternalForm {
+  'id' : bigint,
+  'title' : string,
+  'platform' : string,
+  'embedUrl' : string,
   'departmentId' : bigint,
 }
 export interface FieldValue { 'field' : string, 'value' : string }
@@ -46,40 +61,68 @@ export interface Report {
   'timestamp' : bigint,
   'departmentId' : bigint,
 }
+export interface SubmissionComment {
+  'author' : string,
+  'comment' : string,
+  'timestamp' : bigint,
+  'reportId' : bigint,
+}
 export interface UserProfile { 'name' : string }
 export type UserRole = { 'admin' : null } |
   { 'user' : null } |
   { 'guest' : null };
+export interface WaConfig {
+  'messageFormat' : string,
+  'accessToken' : string,
+  'phoneNumberId' : string,
+}
 export interface _SERVICE {
   '_initializeAccessControlWithSecret' : ActorMethod<[string], undefined>,
+  'addActivityLog' : ActorMethod<[string, string], undefined>,
   'assignCallerUserRole' : ActorMethod<[Principal, UserRole], undefined>,
+  'clearActivityLog' : ActorMethod<[], undefined>,
   'createDepartment' : ActorMethod<[string, string, string], bigint>,
   'createDepartmentHead' : ActorMethod<[string, string, bigint], undefined>,
+  'createExternalForm' : ActorMethod<[string, string, string, bigint], bigint>,
   'createFormTemplate' : ActorMethod<[bigint, string, Array<string>], bigint>,
   'deleteDepartment' : ActorMethod<[bigint], undefined>,
   'deleteDepartmentHead' : ActorMethod<[string], undefined>,
+  'deleteExternalForm' : ActorMethod<[bigint], undefined>,
   'deleteFormTemplate' : ActorMethod<[bigint], undefined>,
+  'getActivityLog' : ActorMethod<[], Array<ActivityLogEntry>>,
   'getAllDepartmentHeads' : ActorMethod<[], Array<DepartmentHead>>,
   'getAllDepartments' : ActorMethod<[], Array<Department>>,
+  'getAllExternalForms' : ActorMethod<[], Array<ExternalForm>>,
+  'getAllFormDeadlines' : ActorMethod<[], Array<[bigint, string]>>,
   'getAllFormTemplates' : ActorMethod<[], Array<FormTemplate>>,
+  'getAllFormVersions' : ActorMethod<[], Array<[bigint, bigint]>>,
   'getAllReports' : ActorMethod<[], Array<Report>>,
+  'getAllSubmissionComments' : ActorMethod<[], Array<SubmissionComment>>,
   'getAppConfig' : ActorMethod<[], [] | [AppConfig]>,
+  'getBackupData' : ActorMethod<[], BackupData>,
   'getCallerUserProfile' : ActorMethod<[], [] | [UserProfile]>,
   'getCallerUserRole' : ActorMethod<[], UserRole>,
   'getDepartment' : ActorMethod<[bigint], [] | [Department]>,
   'getDepartmentHead' : ActorMethod<[string], [] | [DepartmentHead]>,
+  'getFormDeadline' : ActorMethod<[bigint], [] | [string]>,
   'getFormTemplate' : ActorMethod<[bigint], [] | [FormTemplate]>,
+  'getFormVersion' : ActorMethod<[bigint], bigint>,
   'getReport' : ActorMethod<[bigint], [] | [Report]>,
   'getReportsByDepartment' : ActorMethod<[bigint], Array<Report>>,
+  'getSubmissionComment' : ActorMethod<[bigint], [] | [SubmissionComment]>,
   'getUserProfile' : ActorMethod<[Principal], [] | [UserProfile]>,
-  'isCallerAdmin' : ActorMethod<[], boolean>,
   'getWaConfig' : ActorMethod<[], WaConfig>,
-  'setWaConfig' : ActorMethod<[WaConfig], undefined>,
+  'isCallerAdmin' : ActorMethod<[], boolean>,
+  'removeFormDeadline' : ActorMethod<[bigint], undefined>,
   'saveCallerUserProfile' : ActorMethod<[UserProfile], undefined>,
   'setAppConfig' : ActorMethod<[AppConfig], undefined>,
+  'setFormDeadline' : ActorMethod<[bigint, string], undefined>,
+  'setSubmissionComment' : ActorMethod<[bigint, string, string], undefined>,
+  'setWaConfig' : ActorMethod<[WaConfig], undefined>,
   'submitReport' : ActorMethod<[bigint, string, Array<FieldValue>], bigint>,
   'updateDepartment' : ActorMethod<[Department], undefined>,
   'updateDepartmentHead' : ActorMethod<[DepartmentHead], undefined>,
+  'updateExternalForm' : ActorMethod<[ExternalForm], undefined>,
   'updateFormTemplate' : ActorMethod<[FormTemplate], undefined>,
 }
 export declare const idlService: IDL.ServiceClass;

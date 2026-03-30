@@ -19,21 +19,26 @@ import {
 import { Toaster } from "@/components/ui/sonner";
 import {
   Activity,
+  AlertTriangle,
   Baby,
   BarChart3,
   Bed,
   Bell,
   Camera,
   CheckCircle2,
+  CheckSquare,
   ChevronDown,
   ChevronUp,
   ClipboardList,
+  Clock,
+  Download,
   Edit3,
   Eye,
   EyeOff,
   FileDown,
   FileSearch,
   HardDrive,
+  History,
   Image,
   LayoutDashboard,
   Loader2,
@@ -45,10 +50,12 @@ import {
   Printer,
   RefreshCcw,
   Save,
+  ScrollText,
   Send,
   Settings,
   ShieldCheck,
   Skull,
+  Timer,
   Trash2,
   TrendingUp,
   Upload,
@@ -70,13 +77,20 @@ import type {
   AppConfig,
   Department,
   DepartmentHead,
+  ExternalForm,
   FieldValue,
-  FormField,
   FormTemplate,
   Report,
 } from "./backend.d";
 import { useActor } from "./hooks/useActor";
 
+// Local type for form field structure (fields serialized as JSON strings in backend)
+interface FormField {
+  name: string;
+  fieldType: string;
+  options: string[];
+  required?: boolean;
+}
 // ─────────────────────────────────────────────
 // Constants
 // ─────────────────────────────────────────────
@@ -89,6 +103,153 @@ interface WaConfig {
   phoneNumberId: string;
   accessToken: string;
   messageFormat: string;
+}
+
+// ─────────────────────────────────────────────
+// LocalStorage Feature Interfaces
+// ─────────────────────────────────────────────
+interface ActivityEntry {
+  id: string;
+  action: string;
+  actor: string;
+  details: string;
+  timestamp: string;
+}
+
+interface StatusHistoryEntry {
+  status: string;
+  changedAt: string;
+  changedBy: string;
+}
+
+interface CommentEntry {
+  id: string;
+  text: string;
+  author: string;
+  createdAt: string;
+}
+
+interface FormVersionEntry {
+  version: number;
+  title: string;
+  fields: string[];
+  savedAt: string;
+}
+
+// ─────────────────────────────────────────────
+// localStorage Helpers
+// ─────────────────────────────────────────────
+function logActivity(action: string, details: string, actor = "Admin") {
+  try {
+    const logs: ActivityEntry[] = JSON.parse(
+      localStorage.getItem("thq_activity_log") || "[]",
+    );
+    logs.unshift({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      action,
+      actor,
+      details,
+      timestamp: new Date().toISOString(),
+    });
+    localStorage.setItem(
+      "thq_activity_log",
+      JSON.stringify(logs.slice(0, 500)),
+    );
+  } catch {}
+}
+
+function getActivityLog(): ActivityEntry[] {
+  try {
+    return JSON.parse(localStorage.getItem("thq_activity_log") || "[]");
+  } catch {
+    return [];
+  }
+}
+
+function getDeadlines(): Record<string, string> {
+  try {
+    return JSON.parse(localStorage.getItem("thq_deadlines") || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function setDeadline(formId: string, deadline: string) {
+  const d = getDeadlines();
+  if (deadline) d[formId] = deadline;
+  else delete d[formId];
+  localStorage.setItem("thq_deadlines", JSON.stringify(d));
+}
+
+function getStatusHistory(reportId: string): StatusHistoryEntry[] {
+  try {
+    const all = JSON.parse(localStorage.getItem("thq_status_history") || "{}");
+    return all[reportId] || [];
+  } catch {
+    return [];
+  }
+}
+
+function addStatusHistory(reportId: string, entry: StatusHistoryEntry) {
+  try {
+    const all = JSON.parse(localStorage.getItem("thq_status_history") || "{}");
+    if (!all[reportId]) all[reportId] = [];
+    all[reportId].push(entry);
+    localStorage.setItem("thq_status_history", JSON.stringify(all));
+  } catch {}
+}
+
+function getReportStatus(reportId: string): string {
+  const hist = getStatusHistory(reportId);
+  if (hist.length === 0) return "Pending";
+  return hist[hist.length - 1].status;
+}
+
+function getComments(reportId: string): CommentEntry[] {
+  try {
+    const all = JSON.parse(localStorage.getItem("thq_comments") || "{}");
+    return all[reportId] || [];
+  } catch {
+    return [];
+  }
+}
+
+function addComment(reportId: string, text: string) {
+  try {
+    const all = JSON.parse(localStorage.getItem("thq_comments") || "{}");
+    if (!all[reportId]) all[reportId] = [];
+    all[reportId].push({
+      id: `${Date.now()}`,
+      text,
+      author: "Admin",
+      createdAt: new Date().toISOString(),
+    });
+    localStorage.setItem("thq_comments", JSON.stringify(all));
+  } catch {}
+}
+
+function getFormVersions(formId: string): FormVersionEntry[] {
+  try {
+    const all = JSON.parse(localStorage.getItem("thq_form_versions") || "{}");
+    return all[formId] || [];
+  } catch {
+    return [];
+  }
+}
+
+function saveFormVersion(formId: string, title: string, fields: string[]) {
+  try {
+    const all = JSON.parse(localStorage.getItem("thq_form_versions") || "{}");
+    const existing = all[formId] || [];
+    existing.push({
+      version: existing.length + 1,
+      title,
+      fields,
+      savedAt: new Date().toISOString(),
+    });
+    all[formId] = existing.slice(-10); // keep last 10
+    localStorage.setItem("thq_form_versions", JSON.stringify(all));
+  } catch {}
 }
 
 const MOCK_TIME_SERIES = [
@@ -188,17 +349,22 @@ function DeptIcon({ icon, className }: { icon: string; className?: string }) {
   return <Icon className={className} />;
 }
 
-function parseFields(rawFields: string[]): FormField[] {
+function parseFields(
+  rawFields: string[],
+): (FormField & { required?: boolean })[] {
   return rawFields.map((f) => {
     try {
-      return JSON.parse(f) as FormField;
+      const parsed = JSON.parse(f);
+      return parsed as FormField & { required?: boolean };
     } catch {
       return { name: f, fieldType: "text", options: [] };
     }
   });
 }
 
-function serializeFields(fields: FormField[]): string[] {
+function serializeFields(
+  fields: (FormField & { required?: boolean })[],
+): string[] {
   return fields.map((f) => JSON.stringify(f));
 }
 
@@ -286,7 +452,14 @@ type Session =
   | { type: "admin" }
   | { type: "deptHead"; head: DepartmentHead };
 
-type AdminTab = "TV" | "DEPT" | "REPORTS" | "FORMS" | "CONFIG" | "NOTIFY";
+type AdminTab =
+  | "TV"
+  | "DEPT"
+  | "REPORTS"
+  | "FORMS"
+  | "CONFIG"
+  | "NOTIFY"
+  | "LOGS";
 type DeptTab = "MY_DEPT" | "MY_REPORTS";
 
 // ─────────────────────────────────────────────
@@ -307,6 +480,7 @@ function LoginScreen({
   const handleAdminLogin = (e: React.FormEvent) => {
     e.preventDefault();
     if (pin === ADMIN_PIN) {
+      logActivity("Login", "Admin logged in");
       onLogin({ type: "admin" });
     } else {
       toast.error("Invalid PIN");
@@ -321,6 +495,7 @@ function LoginScreen({
     try {
       const head = await actor.getDepartmentHead(pin);
       if (head) {
+        logActivity("Login", `Dept head ${head.name} logged in`, head.name);
         onLogin({ type: "deptHead", head });
       } else {
         toast.error("Invalid PIN");
@@ -484,13 +659,7 @@ function TVTab({
     return () => clearInterval(t);
   }, []);
 
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
-  const todayStartMs = todayStart.getTime();
-  const todayReports = reports.filter(
-    (r) => Number(r.timestamp) / 1_000_000 >= todayStartMs,
-  );
-  const todayTotal = todayReports.length;
+  const totalSubmissions = reports.length;
 
   return (
     <div className="space-y-4 pb-28">
@@ -527,10 +696,10 @@ function TVTab({
         <Card className="p-5">
           <TrendingUp size={18} className="text-emerald-400 mb-3" />
           <div className="text-[10px] font-black text-white/30 uppercase mb-1">
-            Today's Submissions
+            Total Submissions
           </div>
           <div className="text-4xl font-black text-white tracking-tighter">
-            {todayTotal}
+            {totalSubmissions}
           </div>
         </Card>
         <Card className="p-5">
@@ -597,14 +766,22 @@ function TVTab({
             >
               <DeptIcon icon={d.icon} className={`${d.color} mx-auto mb-1`} />
               <div className="text-lg font-black text-white">
-                {
-                  todayReports.filter(
-                    (r) => String(r.departmentId) === String(d.id),
-                  ).length
-                }
+                {(() => {
+                  const todayStr = new Date().toDateString();
+                  return reports.filter((r) => {
+                    const date = new Date(Number(r.timestamp) / 1_000_000);
+                    return (
+                      String(r.departmentId) === String(d.id) &&
+                      date.toDateString() === todayStr
+                    );
+                  }).length;
+                })()}
               </div>
               <div className="text-[9px] text-white/30 font-bold uppercase truncate">
                 {d.departmentLabel}
+              </div>
+              <div className="text-[8px] text-white/20 font-medium mt-0.5">
+                today
               </div>
             </div>
           ))}
@@ -756,14 +933,31 @@ function SubmitReportModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!actor || !template) return;
+    // Feature 8: Required fields enforcement
+    const parsedFields = parseFields(template.fields) as (FormField & {
+      required?: boolean;
+    })[];
+    for (const f of parsedFields) {
+      if (f.required) {
+        const val = values[f.name] || "";
+        if (!val || val === "false") {
+          toast.error(`Please fill required field: ${f.name}`);
+          return;
+        }
+      }
+    }
     setLoading(true);
     try {
-      const parsedFields = parseFields(template.fields);
       const fieldValues: FieldValue[] = parsedFields.map((f) => ({
         field: f.name,
         value: values[f.name] || "",
       }));
       await actor.submitReport(deptId, submittedBy, fieldValues);
+      logActivity(
+        "Submission",
+        `${submittedBy} submitted form for dept ${String(deptId)}`,
+        submittedBy,
+      );
       toast.success("Report submitted successfully");
       onSuccess();
       onClose();
@@ -915,6 +1109,9 @@ function SubmitReportModal({
               <div key={field.name} className="space-y-1.5">
                 <span className="text-[10px] font-black text-white/40 uppercase tracking-widest">
                   {field.name}
+                  {field.required && (
+                    <span className="text-rose-400 ml-1">*</span>
+                  )}
                 </span>
                 {renderField(field)}
               </div>
@@ -1289,12 +1486,14 @@ function DepartmentsTab({
 function MyDeptTab({
   dept,
   templates,
+  externalForms,
   actor,
   headName,
   onSuccess,
 }: {
   dept: Department | null;
   templates: FormTemplate[];
+  externalForms: ExternalForm[];
   actor: ReturnType<typeof useActor>["actor"];
   headName: string;
   onSuccess: () => void;
@@ -1303,6 +1502,13 @@ function MyDeptTab({
     open: boolean;
     template: FormTemplate | null;
   } | null>(null);
+  const [openExtForm, setOpenExtForm] = useState<ExternalForm | null>(null);
+
+  const [now, setNow] = React.useState(new Date());
+  React.useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 60000);
+    return () => clearInterval(t);
+  }, []);
 
   if (!dept) {
     return (
@@ -1317,8 +1523,114 @@ function MyDeptTab({
     );
   }
 
+  const deadlines = getDeadlines();
+
+  // Get dept reports (passed in via props - using a workaround since we don't have them here)
+  // We'll show pending forms based on deadlines
+  const pendingForms = (() => {
+    const visible = templates.filter(
+      (tmpl) => tmpl.departmentId === 0n || tmpl.departmentId === dept.id,
+    );
+    return visible.filter((tmpl) => {
+      const dl = deadlines[String(tmpl.id)];
+      if (!dl) return false;
+      return new Date(dl) > now; // not yet overdue = pending
+    });
+  })();
+
+  const overdueForms = (() => {
+    const visible = templates.filter(
+      (tmpl) => tmpl.departmentId === 0n || tmpl.departmentId === dept.id,
+    );
+    return visible.filter((tmpl) => {
+      const dl = deadlines[String(tmpl.id)];
+      if (!dl) return false;
+      return new Date(dl) <= now;
+    });
+  })();
+
   return (
     <div className="space-y-4 pb-28">
+      {/* Feature 5: Dept Head Dashboard Stats */}
+      <div className="grid grid-cols-3 gap-2">
+        <div className="bg-[#151515] border border-white/5 rounded-2xl p-3 text-center">
+          <div className="text-2xl font-black text-white">
+            {pendingForms.length}
+          </div>
+          <div className="text-[8px] text-amber-400 font-bold uppercase mt-0.5">
+            Pending
+          </div>
+        </div>
+        <div className="bg-[#151515] border border-white/5 rounded-2xl p-3 text-center">
+          <div className="text-2xl font-black text-white">
+            {overdueForms.length}
+          </div>
+          <div className="text-[8px] text-rose-400 font-bold uppercase mt-0.5">
+            Overdue
+          </div>
+        </div>
+        <div className="bg-[#151515] border border-white/5 rounded-2xl p-3 text-center">
+          <div className="text-2xl font-black text-white">
+            {
+              templates.filter(
+                (t) => t.departmentId === 0n || t.departmentId === dept.id,
+              ).length
+            }
+          </div>
+          <div className="text-[8px] text-emerald-400 font-bold uppercase mt-0.5">
+            Forms
+          </div>
+        </div>
+      </div>
+
+      {/* Overdue Alerts */}
+      {overdueForms.length > 0 && (
+        <div className="bg-rose-500/10 border border-rose-500/30 rounded-2xl px-4 py-3 flex items-start gap-2">
+          <AlertTriangle size={16} className="text-rose-400 shrink-0 mt-0.5" />
+          <div>
+            <div className="text-[11px] text-rose-400 font-black uppercase">
+              Overdue Forms
+            </div>
+            {overdueForms.map((f) => (
+              <div
+                key={String(f.id)}
+                className="text-[10px] text-rose-300/70 font-bold"
+              >
+                {f.title} — deadline passed
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Pending Forms with Countdown */}
+      {pendingForms.length > 0 && (
+        <div className="space-y-2">
+          <SectionLabel>
+            <Timer size={10} /> Pending Deadlines
+          </SectionLabel>
+          {pendingForms.map((tmpl) => {
+            const dl = new Date(deadlines[String(tmpl.id)]);
+            const diff = dl.getTime() - now.getTime();
+            const hrs = Math.floor(diff / 3600000);
+            const mins = Math.floor((diff % 3600000) / 60000);
+            return (
+              <div
+                key={String(tmpl.id)}
+                className="bg-amber-500/10 border border-amber-500/20 rounded-2xl px-4 py-3 flex items-center justify-between"
+              >
+                <div className="text-xs font-black text-white">
+                  {tmpl.title}
+                </div>
+                <div className="text-[10px] text-amber-400 font-bold tabular-nums">
+                  {hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m`}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       <Card className="p-5">
         <div className="flex items-center gap-4">
           <div className={`p-4 rounded-2xl bg-white/5 ${dept.color}`}>
@@ -1368,7 +1680,7 @@ function MyDeptTab({
                   key={String(tmpl.id)}
                   className="p-5 flex items-center justify-between"
                 >
-                  <div>
+                  <div className="flex-1 min-w-0">
                     <div className="text-base font-black text-white">
                       {tmpl.title}
                     </div>
@@ -1377,6 +1689,27 @@ function MyDeptTab({
                         .map((f) => f.name)
                         .join(" • ")}
                     </div>
+                    {(() => {
+                      const dl = getDeadlines()[String(tmpl.id)];
+                      if (!dl) return null;
+                      const dlDate = new Date(dl);
+                      const isOverdue = dlDate <= new Date();
+                      if (isOverdue)
+                        return (
+                          <div className="text-[9px] text-rose-400 font-black uppercase mt-1 flex items-center gap-1">
+                            <AlertTriangle size={9} /> OVERDUE
+                          </div>
+                        );
+                      const diff = dlDate.getTime() - new Date().getTime();
+                      const hrs = Math.floor(diff / 3600000);
+                      const mins = Math.floor((diff % 3600000) / 60000);
+                      return (
+                        <div className="text-[9px] text-amber-400 font-bold mt-1 flex items-center gap-1">
+                          <Clock size={9} /> Due in{" "}
+                          {hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m`}
+                        </div>
+                      );
+                    })()}
                   </div>
                   <button
                     type="button"
@@ -1384,7 +1717,7 @@ function MyDeptTab({
                     onClick={() =>
                       setSubmitModal({ open: true, template: tmpl })
                     }
-                    className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-400 text-black font-black text-xs px-4 py-2.5 rounded-xl uppercase tracking-widest transition-colors"
+                    className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-400 text-black font-black text-xs px-4 py-2.5 rounded-xl uppercase tracking-widest transition-colors ml-3 shrink-0"
                   >
                     <Plus size={12} /> Submit
                   </button>
@@ -1394,6 +1727,70 @@ function MyDeptTab({
           );
         })()}
       </div>
+
+      {/* External Forms Section */}
+      {(() => {
+        const visibleExtForms = externalForms.filter(
+          (ef) => ef.departmentId === 0n || ef.departmentId === dept.id,
+        );
+        if (visibleExtForms.length === 0) return null;
+        return (
+          <div className="mt-2">
+            <h3 className="text-white font-black text-sm uppercase tracking-tight mb-3 flex items-center gap-2">
+              <span className="text-emerald-400">⇗</span> External Forms
+            </h3>
+            <div className="space-y-3">
+              {visibleExtForms.map((ef) => (
+                <Card
+                  key={String(ef.id)}
+                  className="p-5 flex items-center justify-between gap-4"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <div className="text-base font-black text-white">
+                        {ef.title}
+                      </div>
+                      <PlatformBadge platform={ef.platform} />
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    data-ocid={`mydept.extform_button.${Number(ef.id)}`}
+                    onClick={() => setOpenExtForm(ef)}
+                    className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-black text-xs px-4 py-2.5 rounded-xl uppercase tracking-widest transition-colors shrink-0"
+                  >
+                    Open Form
+                  </button>
+                </Card>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* External Form iframe Dialog */}
+      <Dialog
+        open={!!openExtForm}
+        onOpenChange={(v) => !v && setOpenExtForm(null)}
+      >
+        <DialogContent className="max-w-4xl w-full h-[90vh] p-0 overflow-hidden bg-[#111]">
+          <DialogHeader className="px-5 py-3 border-b border-white/10 flex flex-row items-center justify-between">
+            <DialogTitle className="text-white font-black text-sm uppercase tracking-wide">
+              {openExtForm?.title}
+            </DialogTitle>
+          </DialogHeader>
+          {openExtForm && (
+            <iframe
+              src={openExtForm.embedUrl}
+              title={openExtForm.title}
+              className="w-full flex-1"
+              style={{ height: "calc(90vh - 60px)", border: "none" }}
+              allow="camera; microphone; geolocation; *"
+              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-pointer-lock allow-top-navigation-by-user-activation"
+            />
+          )}
+        </DialogContent>
+      </Dialog>
 
       {submitModal && (
         <SubmitReportModal
@@ -1425,6 +1822,43 @@ function ReportsTab({
   onRefresh: () => void;
 }) {
   const [expandedId, setExpandedId] = useState<bigint | null>(null);
+  const [reportStatuses, setReportStatuses] = useState<Record<string, string>>(
+    {},
+  );
+  const [commentInputs, setCommentInputs] = useState<Record<string, string>>(
+    {},
+  );
+  const [, forceRefresh] = useState(0);
+
+  // Load statuses from localStorage
+  React.useEffect(() => {
+    const statuses: Record<string, string> = {};
+    for (const r of reports) {
+      statuses[String(r.id)] = getReportStatus(String(r.id));
+    }
+    setReportStatuses(statuses);
+  }, [reports]);
+
+  const handleStatusChange = (reportId: string, newStatus: string) => {
+    const entry: StatusHistoryEntry = {
+      status: newStatus,
+      changedAt: new Date().toISOString(),
+      changedBy: "Admin",
+    };
+    addStatusHistory(reportId, entry);
+    setReportStatuses((p) => ({ ...p, [reportId]: newStatus }));
+    logActivity("Status Changed", `Report ${reportId} status → ${newStatus}`);
+    toast.success(`Status updated to ${newStatus}`);
+  };
+
+  const handleAddComment = (reportId: string) => {
+    const text = commentInputs[reportId]?.trim();
+    if (!text) return;
+    addComment(reportId, text);
+    setCommentInputs((p) => ({ ...p, [reportId]: "" }));
+    forceRefresh((n) => n + 1);
+    toast.success("Note added");
+  };
 
   const getDeptName = (id: bigint) =>
     departments.find((d) => String(d.id) === String(id))?.departmentLabel ||
@@ -1603,8 +2037,16 @@ function ReportsTab({
                   </div>
                   <div className="flex items-center gap-3">
                     <div className="text-right">
-                      <div className="text-[10px] text-emerald-400 font-bold">
-                        VERIFIED
+                      <div
+                        className={`text-[10px] font-bold ${
+                          reportStatuses[String(r.id)] === "Approved"
+                            ? "text-emerald-400"
+                            : reportStatuses[String(r.id)] === "Submitted"
+                              ? "text-blue-400"
+                              : "text-amber-400"
+                        }`}
+                      >
+                        {reportStatuses[String(r.id)] || "PENDING"}
                       </div>
                       <div className="text-[10px] text-white/20">
                         {formatDate(r.timestamp)}
@@ -1618,17 +2060,134 @@ function ReportsTab({
                   </div>
                 </button>
                 {isExp && (
-                  <div className="border-t border-white/5 px-4 pb-4 space-y-2">
-                    {r.fieldValues.map((fv) => (
-                      <div key={fv.field} className="flex justify-between">
-                        <span className="text-[11px] text-white/40 font-bold uppercase">
-                          {fv.field}
-                        </span>
-                        <span className="text-[11px] text-white font-bold">
-                          {fv.value}
-                        </span>
+                  <div className="border-t border-white/5 px-4 pb-4 space-y-3 pt-3">
+                    {/* Field Values */}
+                    <div className="space-y-2">
+                      {r.fieldValues.map((fv) => (
+                        <div key={fv.field} className="flex justify-between">
+                          <span className="text-[11px] text-white/40 font-bold uppercase">
+                            {fv.field}
+                          </span>
+                          <span className="text-[11px] text-white font-bold">
+                            {fv.value.startsWith("data:image") ? (
+                              <img
+                                src={fv.value}
+                                alt="img"
+                                className="w-16 h-12 object-cover rounded-lg"
+                              />
+                            ) : (
+                              fv.value
+                            )}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    {/* Status Control */}
+                    <div className="border-t border-white/5 pt-3">
+                      <span className="text-[10px] font-black text-white/30 uppercase tracking-widest block mb-2">
+                        Status
+                      </span>
+                      <div className="flex gap-2 flex-wrap">
+                        {["Pending", "Submitted", "Approved"].map((s) => (
+                          <button
+                            key={s}
+                            type="button"
+                            onClick={() => handleStatusChange(String(r.id), s)}
+                            className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase transition-colors ${
+                              reportStatuses[String(r.id)] === s
+                                ? s === "Approved"
+                                  ? "bg-emerald-500 text-black"
+                                  : s === "Submitted"
+                                    ? "bg-blue-500 text-white"
+                                    : "bg-amber-500 text-black"
+                                : "bg-white/5 text-white/40 hover:bg-white/10"
+                            }`}
+                          >
+                            {s}
+                          </button>
+                        ))}
                       </div>
-                    ))}
+                    </div>
+                    {/* Submission History */}
+                    {(() => {
+                      const hist = getStatusHistory(String(r.id));
+                      if (hist.length === 0) return null;
+                      return (
+                        <div className="border-t border-white/5 pt-3">
+                          <span className="text-[10px] font-black text-white/30 uppercase tracking-widest block mb-2">
+                            History
+                          </span>
+                          <div className="space-y-1.5">
+                            <div className="text-[10px] text-white/40">
+                              Submitted by {r.submittedBy} on{" "}
+                              {formatDate(r.timestamp)}
+                            </div>
+                            {hist.map((h, i) => (
+                              <div
+                                key={`${h.changedAt}-${i}`}
+                                className="text-[10px] text-white/40"
+                              >
+                                Status →{" "}
+                                <span className="text-emerald-400">
+                                  {h.status}
+                                </span>{" "}
+                                by {h.changedBy} on{" "}
+                                {new Date(h.changedAt).toLocaleString()}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                    {/* Comments/Notes */}
+                    <div className="border-t border-white/5 pt-3">
+                      <span className="text-[10px] font-black text-white/30 uppercase tracking-widest block mb-2">
+                        Admin Notes
+                      </span>
+                      <div className="space-y-2 mb-2">
+                        {getComments(String(r.id)).map((c) => (
+                          <div
+                            key={c.id}
+                            className="bg-black/30 rounded-xl px-3 py-2"
+                          >
+                            <div className="text-[11px] text-white/80">
+                              {c.text}
+                            </div>
+                            <div className="text-[9px] text-white/20 mt-0.5">
+                              {c.author} •{" "}
+                              {new Date(c.createdAt).toLocaleString()}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={commentInputs[String(r.id)] || ""}
+                          onChange={(e) =>
+                            setCommentInputs((p) => ({
+                              ...p,
+                              [String(r.id)]: e.target.value,
+                            }))
+                          }
+                          placeholder="Add a note..."
+                          className="flex-1 bg-black/40 rounded-xl px-3 py-2 text-xs text-white border border-white/5 outline-none focus:ring-1 ring-emerald-500"
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              handleAddComment(String(r.id));
+                            }
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleAddComment(String(r.id))}
+                          className="px-3 py-2 bg-emerald-500/20 text-emerald-400 rounded-xl text-xs font-black hover:bg-emerald-500/30 transition-colors"
+                        >
+                          Add
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 )}
               </Card>
@@ -1655,11 +2214,13 @@ function FormsTab({
   actor,
   onRefresh,
   departments,
+  externalForms,
 }: {
   templates: FormTemplate[];
   actor: ReturnType<typeof useActor>["actor"];
   onRefresh: () => void;
   departments: Department[];
+  externalForms: ExternalForm[];
 }) {
   const [editingTemplate, setEditingTemplate] = useState<FormTemplate | null>(
     null,
@@ -1670,6 +2231,10 @@ function FormsTab({
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<bigint | null>(null);
   const [selectedDeptId, setSelectedDeptId] = useState<bigint>(0n);
+  const [formDeadline, setFormDeadline] = useState("");
+  const [versionModalFormId, setVersionModalFormId] = useState<string | null>(
+    null,
+  );
 
   const openNewForm = () => {
     setEditingTemplate(null);
@@ -1718,7 +2283,7 @@ function FormsTab({
     );
   };
 
-  const draftToFormFields = (): FormField[] =>
+  const draftToFormFields = (): (FormField & { required?: boolean })[] =>
     draftFields
       .filter((f) => f.name.trim())
       .map((f) => ({
@@ -1731,6 +2296,7 @@ function FormsTab({
                 .map((o) => o.trim())
                 .filter(Boolean)
             : [],
+        required: (f as any).required || false,
       }));
 
   const handleSave = async (e: React.FormEvent) => {
@@ -1741,21 +2307,34 @@ function FormsTab({
     try {
       const serialized = serializeFields(fields);
       if (editingTemplate) {
-        await (actor as any).updateFormTemplate({
+        await actor.updateFormTemplate({
           ...editingTemplate,
           title: formTitle.trim(),
           fields: serialized,
           departmentId: selectedDeptId,
         });
+        saveFormVersion(
+          String(editingTemplate.id),
+          formTitle.trim(),
+          serialized,
+        );
+        if (formDeadline) setDeadline(String(editingTemplate.id), formDeadline);
+        logActivity("Form Updated", `Form "${formTitle}" updated`);
         toast.success("Form template updated");
       } else {
-        await (actor as any).createFormTemplate(
+        const result = await actor.createFormTemplate(
           selectedDeptId,
           formTitle.trim(),
           serialized,
         );
+        // save version after create - we don't have the id yet so log generically
+        logActivity("Form Created", `Form "${formTitle}" created`);
         toast.success("Form template created");
+        if (formDeadline && result) {
+          setDeadline(String(result), formDeadline);
+        }
       }
+      setFormDeadline("");
       cancelBuilder();
       onRefresh();
     } catch {
@@ -1770,6 +2349,7 @@ function FormsTab({
     setDeletingId(id);
     try {
       await actor.deleteFormTemplate(id);
+      logActivity("Form Deleted", `Form ID ${String(id)} deleted`);
       toast.success("Form template deleted");
       onRefresh();
     } catch {
@@ -1830,6 +2410,19 @@ function FormsTab({
                 ))}
               </select>
             </div>
+            {/* Feature 4: Deadline per form */}
+            <div className="space-y-1.5">
+              <span className="text-[10px] font-black text-white/40 uppercase tracking-widest flex items-center gap-1">
+                <Timer size={10} /> Submission Deadline (optional)
+              </span>
+              <input
+                type="datetime-local"
+                value={formDeadline}
+                onChange={(e) => setFormDeadline(e.target.value)}
+                data-ocid="forms.deadline_input"
+                className="w-full bg-black/40 rounded-xl px-3 py-2.5 text-sm text-white border border-white/5 outline-none focus:ring-1 ring-emerald-500"
+              />
+            </div>
 
             <div className="space-y-3">
               <div className="flex items-center justify-between">
@@ -1854,7 +2447,7 @@ function FormsTab({
 
               {draftFields.map((field, idx) => (
                 <div
-                  key={field.id}
+                  key={field.id || String(idx)}
                   data-ocid={`forms.field.${idx + 1}`}
                   className="bg-black/30 rounded-2xl p-4 space-y-3"
                 >
@@ -1905,6 +2498,24 @@ function FormsTab({
                       placeholder="e.g. Low, Medium, High"
                     />
                   )}
+                  {/* Feature 8: Required field toggle */}
+                  <div className="flex items-center gap-2 mt-1">
+                    <input
+                      type="checkbox"
+                      id={`req-${idx}`}
+                      checked={(field as any).required || false}
+                      onChange={(e) =>
+                        updateField(idx, { required: e.target.checked } as any)
+                      }
+                      className="w-4 h-4 accent-emerald-500"
+                    />
+                    <label
+                      htmlFor={`req-${idx}`}
+                      className="text-[10px] text-white/40 font-bold uppercase tracking-widest cursor-pointer"
+                    >
+                      Required Field
+                    </label>
+                  </div>
                 </div>
               ))}
             </div>
@@ -1969,6 +2580,21 @@ function FormsTab({
                           : (departments.find((d) => d.id === tmpl.departmentId)
                               ?.departmentLabel ?? "Unknown Dept")}
                       </span>
+                      {(() => {
+                        const dl = getDeadlines()[String(tmpl.id)];
+                        if (!dl) return null;
+                        const isOverdue = new Date(dl) < new Date();
+                        return (
+                          <span
+                            className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-lg flex items-center gap-1 ${isOverdue ? "bg-rose-500/20 text-rose-400" : "bg-amber-500/15 text-amber-400"}`}
+                          >
+                            <Clock size={8} />{" "}
+                            {isOverdue
+                              ? "OVERDUE"
+                              : new Date(dl).toLocaleDateString()}
+                          </span>
+                        );
+                      })()}
                     </div>
                     <div className="text-[10px] text-white/30 mt-1 font-bold uppercase tracking-widest">
                       {tmpl.fields.length} field
@@ -1999,6 +2625,14 @@ function FormsTab({
                     </button>
                     <button
                       type="button"
+                      data-ocid={`forms.history_button.${idx + 1}`}
+                      onClick={() => setVersionModalFormId(String(tmpl.id))}
+                      className="flex items-center gap-1 text-[10px] text-purple-400 border border-purple-500/20 px-3 py-1.5 rounded-xl hover:bg-purple-500/10 transition-colors font-bold uppercase"
+                    >
+                      <History size={10} /> History
+                    </button>
+                    <button
+                      type="button"
                       data-ocid={`forms.delete_button.${idx + 1}`}
                       onClick={() => handleDelete(tmpl.id)}
                       disabled={String(deletingId) === String(tmpl.id)}
@@ -2017,6 +2651,414 @@ function FormsTab({
             ))}
           </div>
         ))}
+      <ExternalFormsSection
+        externalForms={externalForms}
+        departments={departments}
+        actor={actor}
+        onRefresh={onRefresh}
+      />
+
+      {/* Feature 7: Version History Modal */}
+      {versionModalFormId && (
+        <Dialog
+          open={!!versionModalFormId}
+          onOpenChange={() => setVersionModalFormId(null)}
+        >
+          <DialogContent className="bg-[#151515] border border-white/5 text-white max-w-sm mx-auto rounded-[28px] overflow-y-auto max-h-[80dvh]">
+            <DialogHeader>
+              <DialogTitle className="text-white font-black uppercase tracking-tight flex items-center gap-2">
+                <History size={16} className="text-purple-400" /> Version
+                History
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3 mt-2">
+              {(() => {
+                const versions = getFormVersions(versionModalFormId);
+                if (versions.length === 0)
+                  return (
+                    <div className="text-white/30 text-xs font-bold uppercase text-center py-8">
+                      No versions saved yet.
+                    </div>
+                  );
+                return versions
+                  .slice()
+                  .reverse()
+                  .map((v) => (
+                    <div
+                      key={v.version}
+                      className="bg-black/30 rounded-2xl p-4"
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-[10px] font-black text-purple-400 uppercase">
+                          Version {v.version}
+                        </span>
+                        <span className="text-[9px] text-white/20">
+                          {new Date(v.savedAt).toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="text-sm font-bold text-white mb-1">
+                        {v.title}
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {v.fields.map((f, i) => {
+                          try {
+                            const parsed = JSON.parse(f);
+                            return (
+                              <span
+                                key={`${String(i)}-${f}`}
+                                className="text-[9px] bg-white/5 text-white/40 px-2 py-0.5 rounded-lg"
+                              >
+                                {parsed.name}
+                              </span>
+                            );
+                          } catch {
+                            return null;
+                          }
+                        })}
+                      </div>
+                    </div>
+                  ));
+              })()}
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// EXTERNAL FORMS Section (within Admin FORMS Tab)
+// ─────────────────────────────────────────────
+const PLATFORM_COLORS: Record<string, string> = {
+  "Google Forms": "bg-blue-500/15 text-blue-400 border-blue-500/20",
+  JotForm: "bg-orange-500/15 text-orange-400 border-orange-500/20",
+  Typeform: "bg-purple-500/15 text-purple-400 border-purple-500/20",
+  "Zoho Forms": "bg-teal-500/15 text-teal-400 border-teal-500/20",
+  "Microsoft Forms": "bg-cyan-500/15 text-cyan-400 border-cyan-500/20",
+  SurveyMonkey: "bg-green-500/15 text-green-400 border-green-500/20",
+  Tally: "bg-rose-500/15 text-rose-400 border-rose-500/20",
+  Other: "bg-white/10 text-white/50 border-white/10",
+};
+
+const PLATFORMS = [
+  "Google Forms",
+  "JotForm",
+  "Typeform",
+  "Zoho Forms",
+  "Microsoft Forms",
+  "SurveyMonkey",
+  "Tally",
+  "Other",
+];
+
+function PlatformBadge({ platform }: { platform: string }) {
+  const cls = PLATFORM_COLORS[platform] ?? PLATFORM_COLORS.Other;
+  return (
+    <span
+      className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-lg border ${cls}`}
+    >
+      {platform}
+    </span>
+  );
+}
+
+function ExternalFormsSection({
+  externalForms,
+  departments,
+  actor,
+  onRefresh,
+}: {
+  externalForms: ExternalForm[];
+  departments: Department[];
+  actor: ReturnType<typeof useActor>["actor"];
+  onRefresh: () => void;
+}) {
+  const [showAdd, setShowAdd] = useState(false);
+  const [editingForm, setEditingForm] = useState<ExternalForm | null>(null);
+  const [title, setTitle] = useState("");
+  const [platform, setPlatform] = useState("Google Forms");
+  const [embedUrl, setEmbedUrl] = useState("");
+  const [deptId, setDeptId] = useState("0");
+  const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<bigint | null>(null);
+
+  const openAdd = () => {
+    setEditingForm(null);
+    setTitle("");
+    setPlatform("Google Forms");
+    setEmbedUrl("");
+    setDeptId("0");
+    setShowAdd(true);
+  };
+
+  const openEdit = (ef: ExternalForm) => {
+    setEditingForm(ef);
+    setTitle(ef.title);
+    setPlatform(ef.platform);
+    setEmbedUrl(ef.embedUrl);
+    setDeptId(String(ef.departmentId));
+    setShowAdd(true);
+  };
+
+  const cancel = () => {
+    setShowAdd(false);
+    setEditingForm(null);
+  };
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!actor || !title.trim() || !embedUrl.trim()) return;
+    setSaving(true);
+    try {
+      if (editingForm) {
+        await actor.updateExternalForm({
+          ...editingForm,
+          title: title.trim(),
+          platform,
+          embedUrl: embedUrl.trim(),
+          departmentId: BigInt(deptId),
+        });
+        toast.success("External form updated");
+      } else {
+        await actor.createExternalForm(
+          title.trim(),
+          platform,
+          embedUrl.trim(),
+          BigInt(deptId),
+        );
+        toast.success("External form added");
+      }
+      cancel();
+      onRefresh();
+    } catch {
+      toast.error("Failed to save external form");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (id: bigint) => {
+    if (!actor) return;
+    setDeletingId(id);
+    try {
+      await actor.deleteExternalForm(id);
+      toast.success("External form deleted");
+      onRefresh();
+    } catch {
+      toast.error("Failed to delete external form");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  return (
+    <div className="mt-8 space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <h3 className="text-emerald-400 font-black text-xs uppercase tracking-widest flex items-center gap-2">
+          <span className="w-5 h-0.5 bg-emerald-500 inline-block rounded" />
+          External Forms
+        </h3>
+        {!showAdd && (
+          <button
+            type="button"
+            data-ocid="extforms.open_modal_button"
+            onClick={openAdd}
+            className="flex items-center gap-1.5 text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-3 py-1.5 rounded-xl hover:bg-emerald-500/20 transition-colors font-black uppercase"
+          >
+            <Plus size={11} /> Attach Form
+          </button>
+        )}
+      </div>
+
+      {/* Add/Edit inline form */}
+      {showAdd && (
+        <Card className="p-5">
+          <div className="text-white font-black text-xs uppercase tracking-widest mb-4">
+            {editingForm ? "Edit External Form" : "Attach External Form"}
+          </div>
+          <form onSubmit={handleSave} className="space-y-4">
+            <div>
+              <label
+                htmlFor="ef-title"
+                className="text-[10px] text-white/40 font-bold uppercase tracking-widest block mb-1.5"
+              >
+                Form Title
+              </label>
+              <input
+                id="ef-title"
+                data-ocid="extforms.input"
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="e.g. Patient Feedback Survey"
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm placeholder:text-white/20 focus:outline-none focus:border-emerald-500/50"
+                required
+              />
+            </div>
+            <div>
+              <label
+                htmlFor="ef-platform"
+                className="text-[10px] text-white/40 font-bold uppercase tracking-widest block mb-1.5"
+              >
+                Platform
+              </label>
+              <select
+                id="ef-platform"
+                data-ocid="extforms.select"
+                value={platform}
+                onChange={(e) => setPlatform(e.target.value)}
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-emerald-500/50"
+              >
+                {PLATFORMS.map((p) => (
+                  <option key={p} value={p} className="bg-[#151515]">
+                    {p}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label
+                htmlFor="ef-url"
+                className="text-[10px] text-white/40 font-bold uppercase tracking-widest block mb-1.5"
+              >
+                Form URL / Embed URL
+              </label>
+              <input
+                id="ef-url"
+                data-ocid="extforms.input"
+                type="url"
+                value={embedUrl}
+                onChange={(e) => setEmbedUrl(e.target.value)}
+                placeholder="https://forms.google.com/..."
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm placeholder:text-white/20 focus:outline-none focus:border-emerald-500/50"
+                required
+              />
+            </div>
+            <div>
+              <label
+                htmlFor="ef-dept"
+                className="text-[10px] text-white/40 font-bold uppercase tracking-widest block mb-1.5"
+              >
+                Assign To
+              </label>
+              <select
+                id="ef-dept"
+                data-ocid="extforms.select"
+                value={deptId}
+                onChange={(e) => setDeptId(e.target.value)}
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-emerald-500/50"
+              >
+                <option value="0" className="bg-[#151515]">
+                  Global (All Departments)
+                </option>
+                {departments.map((d) => (
+                  <option
+                    key={String(d.id)}
+                    value={String(d.id)}
+                    className="bg-[#151515]"
+                  >
+                    {d.departmentLabel}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button
+                type="button"
+                data-ocid="extforms.cancel_button"
+                onClick={cancel}
+                className="flex-1 py-3 rounded-2xl bg-white/5 text-white/60 text-xs font-bold uppercase"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                data-ocid="extforms.save_button"
+                disabled={saving || !title.trim() || !embedUrl.trim()}
+                className="flex-1 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-black uppercase disabled:opacity-40 flex items-center justify-center gap-2 transition-colors"
+              >
+                {saving ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <Save size={14} />
+                )}
+                {editingForm ? "Update" : "Attach Form"}
+              </button>
+            </div>
+          </form>
+        </Card>
+      )}
+
+      {/* External Forms List */}
+      {!showAdd && externalForms.length === 0 && (
+        <Card className="p-8 text-center">
+          <div
+            data-ocid="extforms.empty_state"
+            className="text-white/20 text-xs font-bold uppercase"
+          >
+            No external forms attached yet.
+          </div>
+        </Card>
+      )}
+      {!showAdd && externalForms.length > 0 && (
+        <div className="space-y-3">
+          {externalForms.map((ef, idx) => (
+            <Card
+              key={String(ef.id)}
+              data-ocid={`extforms.item.${idx + 1}`}
+              className="p-5"
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <div className="text-base font-black text-white">
+                      {ef.title}
+                    </div>
+                    <PlatformBadge platform={ef.platform} />
+                    <span
+                      className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-lg ${ef.departmentId === 0n ? "bg-blue-500/15 text-blue-400" : "bg-emerald-500/15 text-emerald-400"}`}
+                    >
+                      {ef.departmentId === 0n
+                        ? "Global"
+                        : (departments.find((d) => d.id === ef.departmentId)
+                            ?.departmentLabel ?? "Unknown Dept")}
+                    </span>
+                  </div>
+                  <div className="text-[10px] text-white/30 mt-1 truncate max-w-xs">
+                    {ef.embedUrl}
+                  </div>
+                </div>
+                <div className="flex flex-col gap-2 shrink-0">
+                  <button
+                    type="button"
+                    data-ocid={`extforms.edit_button.${idx + 1}`}
+                    onClick={() => openEdit(ef)}
+                    className="flex items-center gap-1 text-[10px] text-blue-400 border border-blue-500/20 px-3 py-1.5 rounded-xl hover:bg-blue-500/10 transition-colors font-bold uppercase"
+                  >
+                    <Edit3 size={10} /> Edit
+                  </button>
+                  <button
+                    type="button"
+                    data-ocid={`extforms.delete_button.${idx + 1}`}
+                    onClick={() => handleDelete(ef.id)}
+                    disabled={String(deletingId) === String(ef.id)}
+                    className="flex items-center gap-1 text-[10px] text-rose-500 border border-rose-500/20 px-3 py-1.5 rounded-xl hover:bg-rose-500/10 transition-colors font-bold uppercase"
+                  >
+                    {String(deletingId) === String(ef.id) ? (
+                      <Loader2 size={10} className="animate-spin" />
+                    ) : (
+                      <Trash2 size={10} />
+                    )}
+                    Delete
+                  </button>
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -2028,16 +3070,211 @@ function FormsTab({
 // ─────────────────────────────────────────────
 // CONFIG Tab (Admin)
 // ─────────────────────────────────────────────
+function BulkUserImport({
+  actor,
+  onDone,
+}: { actor: ReturnType<typeof useActor>["actor"]; onDone: () => void }) {
+  const [progress, setProgress] = React.useState<string[]>([]);
+  const [importing, setImporting] = React.useState(false);
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !actor) return;
+    setImporting(true);
+    setProgress([]);
+    const text = await file.text();
+    const lines = text.split("\n").filter((l) => l.trim());
+    const dataLines = lines[0]?.toLowerCase().includes("name")
+      ? lines.slice(1)
+      : lines;
+    const msgs: string[] = [];
+    for (let i = 0; i < dataLines.length; i++) {
+      const parts = dataLines[i].split(",").map((p) => p.trim());
+      const [name, pin, deptId] = parts;
+      if (!name || !pin || !deptId) {
+        msgs.push(`Row ${i + 1}: Invalid format - skipped`);
+        setProgress([...msgs]);
+        continue;
+      }
+      try {
+        await actor.createDepartmentHead(name, pin, BigInt(deptId));
+        msgs.push(`Row ${i + 1}: ✓ ${name} imported`);
+        logActivity("User Created", `Bulk import: ${name}`);
+      } catch {
+        msgs.push(`Row ${i + 1}: ✗ ${name} failed`);
+      }
+      setProgress([...msgs]);
+    }
+    setImporting(false);
+    toast.success(
+      `Import complete: ${msgs.filter((m) => m.includes("✓")).length}/${dataLines.length} users`,
+    );
+    onDone();
+  };
+
+  return (
+    <div className="space-y-3">
+      <label
+        data-ocid="config.bulk.upload_button"
+        className={`flex items-center justify-center gap-2 w-full py-3 rounded-xl border-2 border-dashed border-white/10 hover:border-emerald-500/40 text-white/40 hover:text-emerald-400 text-xs font-black uppercase tracking-widest transition-all cursor-pointer ${importing ? "opacity-50 pointer-events-none" : ""}`}
+      >
+        {importing ? (
+          <Loader2 size={14} className="animate-spin" />
+        ) : (
+          <Upload size={14} />
+        )}
+        {importing ? "Importing..." : "Choose CSV File"}
+        <input
+          type="file"
+          accept=".csv,text/csv"
+          className="hidden"
+          onChange={handleFile}
+          disabled={importing}
+        />
+      </label>
+      {progress.length > 0 && (
+        <div className="bg-black/30 rounded-xl p-3 space-y-1 max-h-36 overflow-y-auto">
+          {progress.map((p, i) => (
+            <div
+              key={`${String(i)}-${p.slice(0, 20)}`}
+              className={`text-[10px] font-bold ${p.includes("✓") ? "text-emerald-400" : "text-rose-400"}`}
+            >
+              {p}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BackupRestoreSection({
+  departments,
+  templates,
+  reports,
+}: {
+  departments: Department[];
+  templates: FormTemplate[];
+  reports: Report[];
+}) {
+  const [restoring, setRestoring] = React.useState(false);
+
+  const handleExport = () => {
+    const backup = {
+      exportedAt: new Date().toISOString(),
+      departments,
+      templates,
+      reports,
+      localStorage: {
+        thq_deadlines: localStorage.getItem("thq_deadlines"),
+        thq_comments: localStorage.getItem("thq_comments"),
+        thq_activity_log: localStorage.getItem("thq_activity_log"),
+        thq_form_versions: localStorage.getItem("thq_form_versions"),
+        thq_status_history: localStorage.getItem("thq_status_history"),
+        thq_wa_config: localStorage.getItem("thq_wa_config"),
+      },
+    };
+    const blob = new Blob(
+      [
+        JSON.stringify(
+          backup,
+          (_, v) => (typeof v === "bigint" ? v.toString() : v),
+          2,
+        ),
+      ],
+      { type: "application/json" },
+    );
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `thq-backup-${new Date().toISOString().split("T")[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    logActivity("Backup", "Admin exported backup");
+    toast.success("Backup downloaded");
+  };
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setRestoring(true);
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      if (data.localStorage) {
+        const ls = data.localStorage;
+        if (ls.thq_deadlines)
+          localStorage.setItem("thq_deadlines", ls.thq_deadlines);
+        if (ls.thq_comments)
+          localStorage.setItem("thq_comments", ls.thq_comments);
+        if (ls.thq_activity_log)
+          localStorage.setItem("thq_activity_log", ls.thq_activity_log);
+        if (ls.thq_form_versions)
+          localStorage.setItem("thq_form_versions", ls.thq_form_versions);
+        if (ls.thq_status_history)
+          localStorage.setItem("thq_status_history", ls.thq_status_history);
+      }
+      logActivity("Restore", "Admin restored backup");
+      toast.success("Backup restored. Reload to apply backend data.");
+    } catch {
+      toast.error("Invalid backup file");
+    } finally {
+      setRestoring(false);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3">
+        <button
+          type="button"
+          data-ocid="config.backup.button"
+          onClick={handleExport}
+          className="flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 transition-colors text-xs font-black uppercase"
+        >
+          <Download size={14} /> Export Backup
+        </button>
+        <label
+          data-ocid="config.restore.button"
+          className={`flex items-center justify-center gap-2 py-3 rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20 transition-colors text-xs font-black uppercase cursor-pointer ${restoring ? "opacity-50" : ""}`}
+        >
+          {restoring ? (
+            <Loader2 size={14} className="animate-spin" />
+          ) : (
+            <Upload size={14} />
+          )}
+          Import Backup
+          <input
+            type="file"
+            accept=".json"
+            className="hidden"
+            onChange={handleImport}
+            disabled={restoring}
+          />
+        </label>
+      </div>
+      <p className="text-[10px] text-white/20 font-bold">
+        Note: Backup includes all localStorage data. Backend data cannot be
+        restored via API.
+      </p>
+    </div>
+  );
+}
+
 function ConfigTab({
   departments,
   actor,
   config,
   onRefresh,
+  reports,
+  templates,
 }: {
   departments: Department[];
   actor: ReturnType<typeof useActor>["actor"];
   config: AppConfig | null;
   onRefresh: () => void;
+  reports: Report[];
+  templates: FormTemplate[];
 }) {
   const [appCfg, setAppCfg] = useState<
     Omit<AppConfig, "tvRefreshRate"> & { tvRefreshRate: number }
@@ -2134,6 +3371,7 @@ function ConfigTab({
         newHead.pin,
         BigInt(newHead.deptId),
       );
+      logActivity("User Created", `User "${newHead.name}" created`);
       const updatedHeads = await actor.getAllDepartmentHeads();
       setDeptHeads(updatedHeads);
       setNewHead({ name: "", pin: "", deptId: "" });
@@ -2170,6 +3408,7 @@ function ConfigTab({
     if (!actor) return;
     try {
       await actor.deleteDepartmentHead(pin);
+      logActivity("User Deleted", "User with PIN deleted");
       setDeptHeads((prev) => prev.filter((h) => h.pin !== pin));
       toast.success("Department user removed");
     } catch {
@@ -2449,6 +3688,48 @@ function ConfigTab({
         </div>
       </div>
 
+      {/* ── Bulk User Import ── */}
+      <Card className="p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <SectionLabel>
+            <Upload size={12} /> Bulk User Import (CSV)
+          </SectionLabel>
+          <button
+            type="button"
+            data-ocid="config.bulk.download_button"
+            onClick={() => {
+              const csv =
+                "name,pin,departmentId\nDr. Ahmed,1234,1\nDr. Sara,5678,2";
+              const blob = new Blob([csv], { type: "text/csv" });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = "sample-users.csv";
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
+            className="text-[10px] text-emerald-400 border border-emerald-500/20 px-3 py-1.5 rounded-xl hover:bg-emerald-500/10 transition-colors font-bold uppercase flex items-center gap-1"
+          >
+            <Download size={10} /> Sample CSV
+          </button>
+        </div>
+        <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl px-4 py-3">
+          <p className="text-[11px] text-blue-300/80 font-bold">
+            CSV Format: name,pin,departmentId (one user per row)
+          </p>
+        </div>
+        <BulkUserImport
+          actor={actor}
+          onDone={async () => {
+            if (!actor) return;
+            actor
+              .getAllDepartmentHeads()
+              .then(() => {})
+              .catch(() => {});
+          }}
+        />
+      </Card>
+
       {/* ── App Settings ── */}
       <Card className="p-5 space-y-4">
         <SectionLabel>
@@ -2544,6 +3825,18 @@ function ConfigTab({
             Save WhatsApp Config
           </button>
         </form>
+      </Card>
+
+      {/* ── Backup & Restore ── */}
+      <Card className="p-5 space-y-4">
+        <SectionLabel>
+          <HardDrive size={12} /> Backup &amp; Restore
+        </SectionLabel>
+        <BackupRestoreSection
+          departments={departments}
+          templates={templates}
+          reports={reports}
+        />
       </Card>
 
       {/* ── Department Management ── */}
@@ -2683,6 +3976,203 @@ function ConfigTab({
 
 // ─────────────────────────────────────────────
 // Notify Tab
+// ─────────────────────────────────────────────
+// LOGS Tab (Admin) - Feature 10 + Feature 2
+// ─────────────────────────────────────────────
+function LogsTab({
+  reports,
+  departments,
+}: { reports: Report[]; departments: Department[] }) {
+  const [logs, setLogs] = React.useState<ActivityEntry[]>([]);
+  const [dateRange, setDateRange] = React.useState<"today" | "week" | "month">(
+    "today",
+  );
+  React.useEffect(() => {
+    setLogs(getActivityLog());
+  }, []);
+
+  const clearLogs = () => {
+    localStorage.removeItem("thq_activity_log");
+    setLogs([]);
+    toast.success("Logs cleared");
+  };
+
+  const getActionIcon = (action: string) => {
+    if (action.includes("Login")) return "🔐";
+    if (action.includes("Form")) return "📋";
+    if (action.includes("Submission")) return "📤";
+    if (action.includes("User")) return "👤";
+    if (action.includes("Status")) return "🔄";
+    if (action.includes("Backup") || action.includes("Restore")) return "💾";
+    if (action.includes("Config")) return "⚙️";
+    return "📌";
+  };
+
+  const getFilteredReports = () => {
+    const now = new Date();
+    return reports.filter((r) => {
+      const date = new Date(Number(r.timestamp) / 1_000_000);
+      if (dateRange === "today") {
+        return date.toDateString() === now.toDateString();
+      }
+      if (dateRange === "week") {
+        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        return date >= weekAgo;
+      }
+      const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      return date >= monthAgo;
+    });
+  };
+
+  const generateReportSummaryPDF = () => {
+    const filtered = getFilteredReports();
+    if (filtered.length === 0) {
+      toast.error("No reports in selected period");
+      return;
+    }
+    const getDeptName = (id: bigint) =>
+      departments.find((d) => String(d.id) === String(id))?.departmentLabel ||
+      "Unknown";
+    const byDept: Record<string, { count: number; names: string[] }> = {};
+    for (const r of filtered) {
+      const name = getDeptName(r.departmentId);
+      if (!byDept[name]) byDept[name] = { count: 0, names: [] };
+      byDept[name].count++;
+      byDept[name].names.push(r.submittedBy);
+    }
+    const win = window.open("", "_blank");
+    if (!win) {
+      toast.error("Pop-up blocked");
+      return;
+    }
+    const label =
+      dateRange === "today"
+        ? "Today"
+        : dateRange === "week"
+          ? "Last 7 Days"
+          : "Last 30 Days";
+    const rows = Object.entries(byDept)
+      .map(
+        ([dept, data]) =>
+          `<tr><td>${dept}</td><td>${data.count}</td><td>${[...new Set(data.names)].join(", ")}</td></tr>`,
+      )
+      .join("");
+    win.document.write(
+      `<!DOCTYPE html><html><head><title>THQ Report Summary</title><style>body{font-family:Arial,sans-serif;font-size:12px;padding:20px}h1{font-size:18px}table{width:100%;border-collapse:collapse}th{background:#1a1a1a;color:#fff;padding:8px;text-align:left;font-size:11px;text-transform:uppercase}td{padding:7px 10px;border-bottom:1px solid #e5e5e5;font-size:11px}@media print{body{padding:0}}</style></head><body><h1>THQ Hospital — Report Summary (${label})</h1><p>Generated: ${new Date().toLocaleString()} | Total Submissions: ${filtered.length}</p><table><thead><tr><th>Department</th><th>Count</th><th>Submitted By</th></tr></thead><tbody>${rows}</tbody></table></body></html>`,
+    );
+    win.document.close();
+    win.print();
+    logActivity("Report Summary", `Generated PDF summary for ${label}`);
+  };
+
+  return (
+    <div className="space-y-5 pb-28">
+      <h2 className="text-white font-black flex items-center gap-2 uppercase">
+        <ScrollText size={20} className="text-emerald-400" /> Activity Logs
+      </h2>
+
+      {/* Report Summary Generator */}
+      <div className="border border-purple-500/20 rounded-[28px] overflow-hidden">
+        <div className="bg-purple-500/10 px-5 py-4 flex items-center gap-3">
+          <div className="w-8 h-8 rounded-xl bg-purple-500/20 flex items-center justify-center">
+            <FileSearch size={16} className="text-purple-400" />
+          </div>
+          <div>
+            <div className="text-sm font-black text-white uppercase">
+              Generate Report Summary
+            </div>
+            <div className="text-[10px] text-purple-400/60 font-bold uppercase mt-0.5">
+              PDF export by date range
+            </div>
+          </div>
+        </div>
+        <div className="p-5 bg-[#151515] space-y-4">
+          <div className="flex gap-2">
+            {(["today", "week", "month"] as const).map((r) => (
+              <button
+                key={r}
+                type="button"
+                data-ocid={`logs.range_${r}_button`}
+                onClick={() => setDateRange(r)}
+                className={`flex-1 py-2 rounded-xl text-xs font-black uppercase transition-colors ${dateRange === r ? "bg-purple-500 text-white" : "bg-white/5 text-white/40 hover:bg-white/10"}`}
+              >
+                {r === "today" ? "Today" : r === "week" ? "7 Days" : "30 Days"}
+              </button>
+            ))}
+          </div>
+          <div className="text-center text-sm text-white/60 font-bold">
+            {getFilteredReports().length} submissions in period
+          </div>
+          <button
+            type="button"
+            data-ocid="logs.generate_pdf_button"
+            onClick={generateReportSummaryPDF}
+            className="w-full py-3 rounded-xl bg-purple-500 text-white text-xs font-black uppercase flex items-center justify-center gap-2 hover:bg-purple-400 transition-colors"
+          >
+            <Printer size={14} /> Generate PDF Summary
+          </button>
+        </div>
+      </div>
+
+      {/* Activity Feed */}
+      <div className="flex items-center justify-between">
+        <SectionLabel>
+          <ScrollText size={10} /> Activity Feed ({logs.length})
+        </SectionLabel>
+        <button
+          type="button"
+          data-ocid="logs.clear_button"
+          onClick={clearLogs}
+          className="text-[10px] text-rose-500/60 hover:text-rose-500 font-bold uppercase border border-rose-500/20 px-3 py-1.5 rounded-xl hover:bg-rose-500/10 transition-colors"
+        >
+          Clear Logs
+        </button>
+      </div>
+
+      {logs.length === 0 ? (
+        <div
+          data-ocid="logs.empty_state"
+          className="bg-[#151515] border border-white/5 rounded-[28px] p-10 text-center"
+        >
+          <div className="text-white/20 text-xs font-bold uppercase">
+            No activity logged yet.
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {logs.map((log) => (
+            <div
+              key={log.id}
+              data-ocid="logs.item.1"
+              className="bg-[#151515] border border-white/5 rounded-2xl px-4 py-3 flex items-start gap-3"
+            >
+              <span className="text-base mt-0.5">
+                {getActionIcon(log.action)}
+              </span>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-baseline gap-2 flex-wrap">
+                  <span className="text-xs font-black text-white">
+                    {log.action}
+                  </span>
+                  <span className="text-[10px] text-emerald-400 font-bold">
+                    {log.actor}
+                  </span>
+                </div>
+                <div className="text-[10px] text-white/40 mt-0.5">
+                  {log.details}
+                </div>
+                <div className="text-[9px] text-white/20 mt-0.5">
+                  {new Date(log.timestamp).toLocaleString()}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────────
 function NotifyTab({
   departments,
@@ -2925,8 +4415,47 @@ export default function App() {
   const [adminTab, setAdminTab] = useState<AdminTab>("TV");
   const [deptTab, setDeptTab] = useState<DeptTab>("MY_DEPT");
 
+  // Feature 11: Auto-logout after 15 minutes inactivity
+  const inactivityRef = React.useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const warnRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const resetInactivityTimer = React.useCallback(() => {
+    if (inactivityRef.current) clearTimeout(inactivityRef.current);
+    if (warnRef.current) clearTimeout(warnRef.current);
+    if (session.type === "none") return;
+    warnRef.current = setTimeout(
+      () => {
+        toast.warning("Session will expire in 1 minute due to inactivity");
+      },
+      14 * 60 * 1000,
+    );
+    inactivityRef.current = setTimeout(
+      () => {
+        setSession({ type: "none" });
+        toast.error("Session expired due to inactivity");
+      },
+      15 * 60 * 1000,
+    );
+  }, [session.type]);
+
+  React.useEffect(() => {
+    const events = ["click", "keypress", "scroll", "touchstart"];
+    const handler = () => resetInactivityTimer();
+    for (const ev of events)
+      window.addEventListener(ev, handler, { passive: true });
+    resetInactivityTimer();
+    return () => {
+      for (const ev of events) window.removeEventListener(ev, handler);
+      if (inactivityRef.current) clearTimeout(inactivityRef.current);
+      if (warnRef.current) clearTimeout(warnRef.current);
+    };
+  }, [resetInactivityTimer]);
+
   const [departments, setDepartments] = useState<Department[]>([]);
   const [templates, setTemplates] = useState<FormTemplate[]>([]);
+  const [externalForms, setExternalForms] = useState<ExternalForm[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [dataLoading, setDataLoading] = useState(false);
@@ -2938,15 +4467,17 @@ export default function App() {
     if (!actor) return;
     setDataLoading(true);
     try {
-      const [depts, tmpls, cfg] = await Promise.all([
+      const [depts, tmpls, cfg, extForms] = await Promise.all([
         actor.getAllDepartments(),
         actor.getAllFormTemplates(),
         actor.getAppConfig(),
+        actor.getAllExternalForms(),
       ]);
       setDepartments(depts);
       setHasLoadedOnce(true);
       setTemplates(tmpls as any);
       setConfig(cfg);
+      setExternalForms(extForms as ExternalForm[]);
     } catch {
       toast.error("Failed to load data");
     } finally {
@@ -3105,6 +4636,7 @@ export default function App() {
                     actor={actor}
                     onRefresh={loadData}
                     departments={departments}
+                    externalForms={externalForms}
                   />
                 )}
                 {adminTab === "CONFIG" && (
@@ -3114,6 +4646,8 @@ export default function App() {
                       actor={actor}
                       config={config}
                       onRefresh={loadData}
+                      reports={reports}
+                      templates={templates}
                     />
                   </ErrorBoundary>
                 )}
@@ -3124,6 +4658,9 @@ export default function App() {
                     actor={actor}
                   />
                 )}
+                {adminTab === "LOGS" && (
+                  <LogsTab reports={reports} departments={departments} />
+                )}
               </>
             )}
 
@@ -3133,6 +4670,7 @@ export default function App() {
                   <MyDeptTab
                     dept={myDept}
                     templates={templates}
+                    externalForms={externalForms}
                     actor={actor}
                     headName={session.head.name}
                     onSuccess={() => {
@@ -3195,6 +4733,12 @@ export default function App() {
                 onClick={() => setAdminTab("NOTIFY")}
                 label="NOTIFY"
                 icon={Bell}
+              />
+              <NavBtn
+                active={adminTab === "LOGS"}
+                onClick={() => setAdminTab("LOGS")}
+                label="LOGS"
+                icon={ScrollText}
               />
             </>
           ) : (

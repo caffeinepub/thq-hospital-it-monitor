@@ -96,6 +96,13 @@ export interface Department {
     departmentLabel: string;
     patientCount: bigint;
 }
+export interface BackupData {
+    departments: Array<Department>;
+    formTemplates: Array<FormTemplate>;
+    departmentHeads: Array<DepartmentHead>;
+    externalForms: Array<ExternalForm>;
+    reports: Array<Report>;
+}
 export interface FormTemplate {
     id: bigint;
     title: string;
@@ -116,10 +123,16 @@ export interface AppConfig {
     departmentName: string;
     hospitalName: string;
 }
+export interface SubmissionComment {
+    author: string;
+    comment: string;
+    timestamp: bigint;
+    reportId: bigint;
+}
 export interface WaConfig {
-    phoneNumberId: string;
-    accessToken: string;
     messageFormat: string;
+    accessToken: string;
+    phoneNumberId: string;
 }
 export interface Report {
     id: bigint;
@@ -128,8 +141,21 @@ export interface Report {
     timestamp: bigint;
     departmentId: bigint;
 }
+export interface ExternalForm {
+    id: bigint;
+    title: string;
+    platform: string;
+    embedUrl: string;
+    departmentId: bigint;
+}
 export interface UserProfile {
     name: string;
+}
+export interface ActivityLogEntry {
+    id: bigint;
+    action: string;
+    user: string;
+    timestamp: bigint;
 }
 export enum UserRole {
     admin = "admin",
@@ -138,37 +164,54 @@ export enum UserRole {
 }
 export interface backendInterface {
     _initializeAccessControlWithSecret(userSecret: string): Promise<void>;
+    addActivityLog(action: string, user: string): Promise<void>;
     assignCallerUserRole(user: Principal, role: UserRole): Promise<void>;
+    clearActivityLog(): Promise<void>;
     createDepartment(departmentLabel: string, icon: string, color: string): Promise<bigint>;
     createDepartmentHead(name: string, pin: string, departmentId: bigint): Promise<void>;
+    createExternalForm(title: string, platform: string, embedUrl: string, departmentId: bigint): Promise<bigint>;
     createFormTemplate(departmentId: bigint, title: string, fields: Array<string>): Promise<bigint>;
     deleteDepartment(id: bigint): Promise<void>;
     deleteDepartmentHead(pin: string): Promise<void>;
+    deleteExternalForm(id: bigint): Promise<void>;
     deleteFormTemplate(id: bigint): Promise<void>;
+    getActivityLog(): Promise<Array<ActivityLogEntry>>;
     getAllDepartmentHeads(): Promise<Array<DepartmentHead>>;
     getAllDepartments(): Promise<Array<Department>>;
+    getAllExternalForms(): Promise<Array<ExternalForm>>;
+    getAllFormDeadlines(): Promise<Array<[bigint, string]>>;
     getAllFormTemplates(): Promise<Array<FormTemplate>>;
+    getAllFormVersions(): Promise<Array<[bigint, bigint]>>;
     getAllReports(): Promise<Array<Report>>;
+    getAllSubmissionComments(): Promise<Array<SubmissionComment>>;
     getAppConfig(): Promise<AppConfig | null>;
+    getBackupData(): Promise<BackupData>;
     getCallerUserProfile(): Promise<UserProfile | null>;
     getCallerUserRole(): Promise<UserRole>;
     getDepartment(id: bigint): Promise<Department | null>;
     getDepartmentHead(pin: string): Promise<DepartmentHead | null>;
+    getFormDeadline(formId: bigint): Promise<string | null>;
     getFormTemplate(id: bigint): Promise<FormTemplate | null>;
+    getFormVersion(formId: bigint): Promise<bigint>;
     getReport(id: bigint): Promise<Report | null>;
     getReportsByDepartment(departmentId: bigint): Promise<Array<Report>>;
+    getSubmissionComment(reportId: bigint): Promise<SubmissionComment | null>;
     getUserProfile(user: Principal): Promise<UserProfile | null>;
-    isCallerAdmin(): Promise<boolean>;
     getWaConfig(): Promise<WaConfig>;
-    setWaConfig(config: WaConfig): Promise<void>;
+    isCallerAdmin(): Promise<boolean>;
+    removeFormDeadline(formId: bigint): Promise<void>;
     saveCallerUserProfile(profile: UserProfile): Promise<void>;
     setAppConfig(config: AppConfig): Promise<void>;
+    setFormDeadline(formId: bigint, deadline: string): Promise<void>;
+    setSubmissionComment(reportId: bigint, comment: string, author: string): Promise<void>;
+    setWaConfig(cfg: WaConfig): Promise<void>;
     submitReport(departmentId: bigint, submittedBy: string, fieldValues: Array<FieldValue>): Promise<bigint>;
     updateDepartment(department: Department): Promise<void>;
     updateDepartmentHead(departmentHead: DepartmentHead): Promise<void>;
+    updateExternalForm(form: ExternalForm): Promise<void>;
     updateFormTemplate(formTemplate: FormTemplate): Promise<void>;
 }
-import type { AppConfig as _AppConfig, Department as _Department, DepartmentHead as _DepartmentHead, FormTemplate as _FormTemplate, Report as _Report, UserProfile as _UserProfile, UserRole as _UserRole } from "./declarations/backend.did.d.ts";
+import type { AppConfig as _AppConfig, Department as _Department, DepartmentHead as _DepartmentHead, FormTemplate as _FormTemplate, Report as _Report, SubmissionComment as _SubmissionComment, UserProfile as _UserProfile, UserRole as _UserRole } from "./declarations/backend.did.d.ts";
 export class Backend implements backendInterface {
     constructor(private actor: ActorSubclass<_SERVICE>, private _uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, private _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, private processError?: (error: unknown) => never){}
     async _initializeAccessControlWithSecret(arg0: string): Promise<void> {
@@ -185,6 +228,20 @@ export class Backend implements backendInterface {
             return result;
         }
     }
+    async addActivityLog(arg0: string, arg1: string): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.addActivityLog(arg0, arg1);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.addActivityLog(arg0, arg1);
+            return result;
+        }
+    }
     async assignCallerUserRole(arg0: Principal, arg1: UserRole): Promise<void> {
         if (this.processError) {
             try {
@@ -196,6 +253,20 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.assignCallerUserRole(arg0, to_candid_UserRole_n1(this._uploadFile, this._downloadFile, arg1));
+            return result;
+        }
+    }
+    async clearActivityLog(): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.clearActivityLog();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.clearActivityLog();
             return result;
         }
     }
@@ -224,6 +295,20 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.createDepartmentHead(arg0, arg1, arg2);
+            return result;
+        }
+    }
+    async createExternalForm(arg0: string, arg1: string, arg2: string, arg3: bigint): Promise<bigint> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.createExternalForm(arg0, arg1, arg2, arg3);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.createExternalForm(arg0, arg1, arg2, arg3);
             return result;
         }
     }
@@ -269,6 +354,20 @@ export class Backend implements backendInterface {
             return result;
         }
     }
+    async deleteExternalForm(arg0: bigint): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.deleteExternalForm(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.deleteExternalForm(arg0);
+            return result;
+        }
+    }
     async deleteFormTemplate(arg0: bigint): Promise<void> {
         if (this.processError) {
             try {
@@ -280,6 +379,20 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.deleteFormTemplate(arg0);
+            return result;
+        }
+    }
+    async getActivityLog(): Promise<Array<ActivityLogEntry>> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getActivityLog();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getActivityLog();
             return result;
         }
     }
@@ -311,6 +424,34 @@ export class Backend implements backendInterface {
             return result;
         }
     }
+    async getAllExternalForms(): Promise<Array<ExternalForm>> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getAllExternalForms();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getAllExternalForms();
+            return result;
+        }
+    }
+    async getAllFormDeadlines(): Promise<Array<[bigint, string]>> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getAllFormDeadlines();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getAllFormDeadlines();
+            return result;
+        }
+    }
     async getAllFormTemplates(): Promise<Array<FormTemplate>> {
         if (this.processError) {
             try {
@@ -322,6 +463,20 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.getAllFormTemplates();
+            return result;
+        }
+    }
+    async getAllFormVersions(): Promise<Array<[bigint, bigint]>> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getAllFormVersions();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getAllFormVersions();
             return result;
         }
     }
@@ -339,6 +494,20 @@ export class Backend implements backendInterface {
             return result;
         }
     }
+    async getAllSubmissionComments(): Promise<Array<SubmissionComment>> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getAllSubmissionComments();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getAllSubmissionComments();
+            return result;
+        }
+    }
     async getAppConfig(): Promise<AppConfig | null> {
         if (this.processError) {
             try {
@@ -351,6 +520,20 @@ export class Backend implements backendInterface {
         } else {
             const result = await this.actor.getAppConfig();
             return from_candid_opt_n3(this._uploadFile, this._downloadFile, result);
+        }
+    }
+    async getBackupData(): Promise<BackupData> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getBackupData();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getBackupData();
+            return result;
         }
     }
     async getCallerUserProfile(): Promise<UserProfile | null> {
@@ -409,32 +592,60 @@ export class Backend implements backendInterface {
             return from_candid_opt_n8(this._uploadFile, this._downloadFile, result);
         }
     }
-    async getFormTemplate(arg0: bigint): Promise<FormTemplate | null> {
+    async getFormDeadline(arg0: bigint): Promise<string | null> {
         if (this.processError) {
             try {
-                const result = await this.actor.getFormTemplate(arg0);
+                const result = await this.actor.getFormDeadline(arg0);
                 return from_candid_opt_n9(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
-            const result = await this.actor.getFormTemplate(arg0);
+            const result = await this.actor.getFormDeadline(arg0);
             return from_candid_opt_n9(this._uploadFile, this._downloadFile, result);
         }
     }
-    async getReport(arg0: bigint): Promise<Report | null> {
+    async getFormTemplate(arg0: bigint): Promise<FormTemplate | null> {
         if (this.processError) {
             try {
-                const result = await this.actor.getReport(arg0);
+                const result = await this.actor.getFormTemplate(arg0);
                 return from_candid_opt_n10(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
-            const result = await this.actor.getReport(arg0);
+            const result = await this.actor.getFormTemplate(arg0);
             return from_candid_opt_n10(this._uploadFile, this._downloadFile, result);
+        }
+    }
+    async getFormVersion(arg0: bigint): Promise<bigint> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getFormVersion(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getFormVersion(arg0);
+            return result;
+        }
+    }
+    async getReport(arg0: bigint): Promise<Report | null> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getReport(arg0);
+                return from_candid_opt_n11(this._uploadFile, this._downloadFile, result);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getReport(arg0);
+            return from_candid_opt_n11(this._uploadFile, this._downloadFile, result);
         }
     }
     async getReportsByDepartment(arg0: bigint): Promise<Array<Report>> {
@@ -451,6 +662,20 @@ export class Backend implements backendInterface {
             return result;
         }
     }
+    async getSubmissionComment(arg0: bigint): Promise<SubmissionComment | null> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getSubmissionComment(arg0);
+                return from_candid_opt_n12(this._uploadFile, this._downloadFile, result);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getSubmissionComment(arg0);
+            return from_candid_opt_n12(this._uploadFile, this._downloadFile, result);
+        }
+    }
     async getUserProfile(arg0: Principal): Promise<UserProfile | null> {
         if (this.processError) {
             try {
@@ -465,6 +690,20 @@ export class Backend implements backendInterface {
             return from_candid_opt_n4(this._uploadFile, this._downloadFile, result);
         }
     }
+    async getWaConfig(): Promise<WaConfig> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getWaConfig();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getWaConfig();
+            return result;
+        }
+    }
     async isCallerAdmin(): Promise<boolean> {
         if (this.processError) {
             try {
@@ -476,6 +715,20 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.isCallerAdmin();
+            return result;
+        }
+    }
+    async removeFormDeadline(arg0: bigint): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.removeFormDeadline(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.removeFormDeadline(arg0);
             return result;
         }
     }
@@ -507,17 +760,31 @@ export class Backend implements backendInterface {
             return result;
         }
     }
-    async getWaConfig(): Promise<WaConfig> {
+    async setFormDeadline(arg0: bigint, arg1: string): Promise<void> {
         if (this.processError) {
             try {
-                const result = await this.actor.getWaConfig();
+                const result = await this.actor.setFormDeadline(arg0, arg1);
                 return result;
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
-            const result = await this.actor.getWaConfig();
+            const result = await this.actor.setFormDeadline(arg0, arg1);
+            return result;
+        }
+    }
+    async setSubmissionComment(arg0: bigint, arg1: string, arg2: string): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.setSubmissionComment(arg0, arg1, arg2);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.setSubmissionComment(arg0, arg1, arg2);
             return result;
         }
     }
@@ -577,6 +844,20 @@ export class Backend implements backendInterface {
             return result;
         }
     }
+    async updateExternalForm(arg0: ExternalForm): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.updateExternalForm(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.updateExternalForm(arg0);
+            return result;
+        }
+    }
     async updateFormTemplate(arg0: FormTemplate): Promise<void> {
         if (this.processError) {
             try {
@@ -595,7 +876,13 @@ export class Backend implements backendInterface {
 function from_candid_UserRole_n5(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _UserRole): UserRole {
     return from_candid_variant_n6(_uploadFile, _downloadFile, value);
 }
-function from_candid_opt_n10(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [_Report]): Report | null {
+function from_candid_opt_n10(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [_FormTemplate]): FormTemplate | null {
+    return value.length === 0 ? null : value[0];
+}
+function from_candid_opt_n11(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [_Report]): Report | null {
+    return value.length === 0 ? null : value[0];
+}
+function from_candid_opt_n12(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [_SubmissionComment]): SubmissionComment | null {
     return value.length === 0 ? null : value[0];
 }
 function from_candid_opt_n3(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [_AppConfig]): AppConfig | null {
@@ -610,7 +897,7 @@ function from_candid_opt_n7(_uploadFile: (file: ExternalBlob) => Promise<Uint8Ar
 function from_candid_opt_n8(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [_DepartmentHead]): DepartmentHead | null {
     return value.length === 0 ? null : value[0];
 }
-function from_candid_opt_n9(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [_FormTemplate]): FormTemplate | null {
+function from_candid_opt_n9(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [string]): string | null {
     return value.length === 0 ? null : value[0];
 }
 function from_candid_variant_n6(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
